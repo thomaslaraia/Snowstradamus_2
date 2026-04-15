@@ -1,0 +1,28 @@
+pvpg_parallel:
+  f_scale: 0.1
+  loss: linear
+  init: -0.6
+  lb: -100
+  ub: -0.01
+  
+  file_index:
+  
+  model: parallel_model
+  res: parallel_residuals
+  odr: parallel_odr
+  
+  zeros:
+  beam_focus:
+  y_init: np.max
+  altitude:
+  alt_thresh: 80
+  threshold: 1
+  res_field: alongtrack
+  outlier_removal: false
+  method: normal
+  landcover: forest
+  trim_atmospheric: 0
+  w: [1.0, 0.25]
+  sat_flag: 0
+  show_me_the_good_ones: 0
+  DW: 0

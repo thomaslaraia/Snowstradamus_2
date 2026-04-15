@@ -245,7 +245,7 @@ def safe_mean(arr):
     else:
         return np.mean(arr)
 
-def plot_parallel(atl03s, coefs, colors, title_date, X, Y, xx, yy, beam = None, canopy_frac = None, terrain_frac = None, file_index=None, three=None):
+def plot_parallel(atl03s, coefs, colors, title_date, X, Y, xx, yy, beam = None, canopy_frac = None, terrain_frac = None, file_index=None, three=None, data_quality=0):
     """
     Plotting function of pvpg_parallel. Shows a regression line for each available groudntrack in a bigger plot, as well as groundtrack visualisations in a smaller plot.
     
@@ -260,6 +260,8 @@ def plot_parallel(atl03s, coefs, colors, title_date, X, Y, xx, yy, beam = None, 
     canopy_frac - Default is None. If changed, this will say in the title of the groundtrack what percentage of the data has canopy photon data. Low canopy fraction could indicate poor quality data. This is only displayed if Detail = 2.
     """
 
+    title_color = ['black', 'red']
+    
     # Simple array of all the beam names
     beam_names = [f"Beam {i}" for i in range(1,7)]
     
@@ -284,9 +286,9 @@ def plot_parallel(atl03s, coefs, colors, title_date, X, Y, xx, yy, beam = None, 
     
     # Set the figure title
     if file_index != None:
-        fig.suptitle(title_date + ' - N = ' + str(file_index), fontsize=16)
+        fig.suptitle(title_date + ' - N = ' + str(file_index), fontsize=16, color = title_color[data_quality])
     else:
-        fig.suptitle(title_date, fontsize=16)
+        fig.suptitle(title_date, fontsize=16, color = title_color[data_quality])
     
     # we go through each color and atl03 object together.
     # In this loop, we plot all of the groundtracks where they belong
@@ -296,19 +298,19 @@ def plot_parallel(atl03s, coefs, colors, title_date, X, Y, xx, yy, beam = None, 
         # If there's a canopy fraction wanted, we stick it in the title
         if (canopy_frac != None) & (terrain_frac != None):
             axes[c].set_title(f"{beam_names[c]} - TF = {round(terrain_frac[c],2)}, CF = {round(canopy_frac[c],2)}")
-            plot(atl03.df, axes[c])
+            plot(atl03, axes[c])
         
         elif canopy_frac != None:
             axes[c].set_title(f"{beam_names[c]} - CF = {round(canopy_frac[c],2)}")
-            plot(atl03.df, axes[c])
+            plot(atl03, axes[c])
         
         elif terrain_frac != None:
             axes[c].set_title(f"{beam_names[c]} - TF = {round(terrain_frac[c],2)}")
-            plot(atl03.df, axes[c])
+            plot(atl03, axes[c])
         
         else:
             axes[c].set_title(f"{beam_names[c]}")
-            plot(atl03.df, axes[c])
+            plot(atl03, axes[c])
         
         # If there's a focus on certain beams, we run this if statement to
         # check if the current beam is in the list of beams the user wants.
@@ -319,13 +321,13 @@ def plot_parallel(atl03s, coefs, colors, title_date, X, Y, xx, yy, beam = None, 
             if beam != None:
                 if c + 1 in beam:
                     # scatter
-                    ax7.scatter(X[c],Y[c], s=5, color=cmap3(2*c+1), marker='o')
+                    ax7.scatter(X[i],Y[i], s=5, color=cmap3(2*c+1), marker='o')
                     ax7.scatter(xx[c], yy[c], s=5, color=cmap3(2*c), marker='o')
                     # regress
                     ax7.plot(np.array([0,12]), model([coefs[0], coefs[1+i]], np.array([0,12])), label=f"Beam {int(c+1)}", color=cmap3(2*c), linestyle='--', zorder=3)
             else:
                 #scatter
-                ax7.scatter(X[c],Y[c], s=5, color=cmap3(2*c+1), marker='o')
+                ax7.scatter(X[i],Y[i], s=5, color=cmap3(2*c+1), marker='o')
                 ax7.scatter(xx[c], yy[c], s=5, color=cmap3(2*c), marker='o')
                 #regress
                 ax7.plot(np.array([0,12]), model([coefs[0], coefs[1+i]], np.array([0,12])), label=f"Beam {int(c+1)}", color=cmap3(2*c), linestyle='--', zorder=3)
@@ -354,6 +356,7 @@ def plot_parallel(atl03s, coefs, colors, title_date, X, Y, xx, yy, beam = None, 
     plt.tight_layout(rect=[0, 0, 1, 0.97])  # Adjust the layout to make room for the suptitle
     #plt.savefig('./images/groundtracks.svg')
     plt.show()
+    # plt.savefig(f'./images/600dpi/sample_groundtrack_{file_index}_{round(np.random.rand(),3)*3}.png', dpi=600)
     return
 
 # This corresponds to graph_detail = 1
@@ -376,9 +379,9 @@ def plot_graph(coefs, colors, title_date, X, Y, xx, yy, coords, beam = None, fil
     
     # Set the figure title
     if file_index != None:
-        fig.suptitle(title_date + ' - N = ' + str(file_index) + ' - ' + str(coords), fontsize=16, color = title_color[data_quality])
+        fig.suptitle(title_date + ' - N = ' + str(file_index), fontsize=18, color = title_color[data_quality])
     else:
-        fig.suptitle(title_date + ' - ' + str(coords), fontsize=16, color = title_color[data_quality])
+        fig.suptitle(title_date, fontsize=18, color = title_color[data_quality])
     
     # Plot the data and the regression lines. If the beam parameter is active,
     # then only for the beams of interest
@@ -386,37 +389,42 @@ def plot_graph(coefs, colors, title_date, X, Y, xx, yy, coords, beam = None, fil
         if beam != None:
             if c + 1 in beam:
                 # scatter
-                plt.scatter(X[c],Y[c], s=5, color=cmap3(2*c+1), marker='o')
-                plt.scatter(xx[c], yy[c], s=5, color=cmap3(2*c), marker='o')
+                plt.scatter(X[i],Y[i], s=7, color=cmap3(2*c+1), marker='o')
+                plt.scatter(xx[c], yy[c], s=7, color=cmap3(2*c), marker='o')
                 # regress
-                plt.plot(np.array([0,12]), model([coefs[0], coefs[1+i]], np.array([0,12])), label=f"Beam {int(c+1)}", color=cmap3(2*c), linestyle='--', zorder=3)
+                plt.plot(np.array([0,12]), model([coefs[0], coefs[1+i]], np.array([0,12])), label=f"Beam {int(c+1)}", color=cmap3(2*c), linestyle='--', zorder=3, linewidth=2)
         else:
             #scatter
-            plt.scatter(X[c],Y[c], s=5, color=cmap3(2*c+1), marker='o')
-            plt.scatter(xx[c], yy[c], s=5, color=cmap3(2*c), marker='o')
+            plt.scatter(X[i],Y[i], s=7, color=cmap3(2*c+1), marker='o')
+            plt.scatter(xx[c], yy[c], s=7, color=cmap3(2*c), marker='o')
             #regress
-            plt.plot(np.array([0,12]), model([coefs[0], coefs[1+i]], np.array([0,12])), label=f"Beam {int(c+1)}", color=cmap3(2*c), linestyle='--', zorder=3)
+            plt.plot(np.array([0,12]), model([coefs[0], coefs[1+i]], np.array([0,12])), label=f"Beam {int(c+1)}", color=cmap3(2*c), linestyle='--', zorder=3, linewidth=2)
     # Display the pv/pg estimate
     plt.annotate(r'$\rho_v/\rho_g \approx {:.2f}$'.format(-coefs[0]),
-                   xy=(.081,.98),
+                   xy=(.14,.967),
                    xycoords='axes fraction',
                    ha='right',
                    va='top',
-                   fontsize=8,
+                   fontsize=14,
                    bbox=dict(boxstyle="round,pad=0.3",
                              edgecolor="black",
                              facecolor="white"))
-    
+
     # Do all the boring plot display stuff
-    plt.title(f"Ev/Eg Rates", fontsize=8)
-    plt.xlabel('Eg (returns/shot)')
-    plt.ylabel('Ev (returns/shot)')
-    plt.xlim(0,8)
-    plt.ylim(0,8)
-    plt.legend(loc='best')
+    # plt.title(f"Radiometric Distribution", fontsize=13)
+    plt.xlabel('Eg (returns/shot)', fontsize=14)
+    plt.ylabel('Ev (returns/shot)', fontsize=14)
+    plt.xlim(0,9)
+    plt.ylim(0,9)
+    plt.xticks(fontsize=16)
+    plt.yticks(fontsize=16)
+    leg = plt.legend(loc='best', fontsize=16)
+    # leg_lines = leg.get_lines()
+    # plt.setp(leg_lines, linewidth=10)
     
     plt.tight_layout(rect=[0, 0, 1, 0.97])  # Adjust the layout to make room for the suptitle
     plt.show()
+    # plt.savefig(f'./images/600dpi/radiometric_profile_{round(np.random.rand(),3)*3}.png', dpi=600)
     return
 
 def parallel_model(params, x):
@@ -592,9 +600,27 @@ def parallel_odr(dataset, intercepts, maxes, init = -1, lb = -100, ub = -1/100, 
                 beam_filtered = beam_data[beam_data['Outlier'] == 1]
 
             elif outlier_removal >= 2:
-                # Fit an Local Outlier Factor model
-                lof = LocalOutlierFactor(n_neighbors=round(outlier_removal), contamination='auto')
-                beam_data['Outlier'] = lof.fit_predict(beam_data[['Eg', 'Ev']])
+            #     # Fit an Local Outlier Factor model
+            #     lof = LocalOutlierFactor(n_neighbors=round(outlier_removal), contamination='auto')
+            #     beam_data['Outlier'] = lof.fit_predict(beam_data[['Eg', 'Ev']])
+            #     beam_filtered = beam_data[beam_data['Outlier'] == 1]
+
+            # else:
+
+                # Initialize an array to track if a point is ever flagged as an outlier
+                outlier_flags = np.zeros(len(beam_data), dtype=bool)
+                
+                # for n in range(10, outlier_removal):
+                n = outlier_removal
+                n_ = int(max(1,min(n,len(beam_data)-3)))
+                lof = LocalOutlierFactor(n_neighbors=n_, contamination='auto')
+                preds = lof.fit_predict(beam_data[['Eg', 'Ev']])
+                outlier_flags |= (preds == -1)  # Mark as outlier if flagged at this n_neighbors
+                # lof = LocalOutlierFactor(contamination='auto')
+                # preds = lof.fit_predict(beam_data[['Eg', 'Ev']])
+                # outlier_flags |= (preds == -1)
+
+                beam_data['Outlier'] = np.where(outlier_flags, -1, 1)
                 beam_filtered = beam_data[beam_data['Outlier'] == 1]
         else:
             beam_filtered = beam_data
@@ -682,7 +708,7 @@ def parallel_odr(dataset, intercepts, maxes, init = -1, lb = -100, ub = -1/100, 
     #print(data_quant)
 
     # PLACEHOLDER
-    if ((lf <= 0.7)&(msw < 0.2))&(pv_ratio>=1.3)&(params.x[0]<=7.5)&(strong_pv_max <= 16)&(strong_pg_max <= 16):
+    if ((lf == 0)|(msw == 0))&(strong_pv_max <= 16)&(strong_pg_max <= 16):#&(pv_ratio>=1.05)&(params.x[0]<=7.5)
         data_quality = 0
     else:
         data_quality = 1
@@ -775,10 +801,10 @@ def df_odr(dataset, init=-1, lb = -100, ub = -1/100, model=parallel_model, res =
 
 def pvpg_parallel(dirpath, atl03path, atl08path, coords, width=4, height=4, f_scale = .1, loss = 'linear', init = -.6,\
                   lb = -100, ub = -1/100,file_index = None, model = parallel_model, res = parallel_residuals,\
-                  odr = parallel_odr, zeros=None,beam_focus = None, y_init = np.max, graph_detail = 0, keep_flagged=True,\
+                  odr = parallel_odr, beam_focus = None, y_init = np.max, graph_detail = 0, keep_flagged=True,\
                   opsys='bad', altitude=None,alt_thresh=80, threshold = 1, small_box = 1, rebinned = 0, res_field='alongtrack',
-                  outlier_removal=False, method='normal', landcover = 'forest', trim_atmospheric=0, w=[1.0,0.25], sat_flag = 1,
-                  show_me_the_good_ones = False, DW=0):
+                  outlier_removal=False, method='normal', landcover = 'forest', trim_atmospheric=0, w=[1.0,0.25], sat_flag = 0,
+                  show_me_the_good_ones = 0, DW=0):
     """
     Parallel regression of all tracks on a given overpass.
 
@@ -793,12 +819,10 @@ def pvpg_parallel(dirpath, atl03path, atl08path, coords, width=4, height=4, f_sc
     model - model function to be used in least squares. Default is the parallel model function
     res - Default holds the ODR residuals function to be used in least_squares(). Can hold adjusted residual functions as well.
     odr - function that performs the orthogonal regression. Replace with great care if you do.
-    zeros - Default is None. If changed, this will keep all the canopy height = 0 and Ev = 0 outliers in the data.
     beam - Default is None. Put in input in the form of an array of integers. For example, if you only want to display pv/pg on the plot for Beams 3 and 4, the input is [3,4]
     y_init - This is the function used to initialize the guess for the y intercept. Default is simply the maximum value, as this is expected to correspond with the data point closest to the y-intercept.
     graph_detail - Default is 0. If set to 1, will show a single pv/pg plot for all chosen, available beams. If set to 2, will also show each available groundtrack.
     canopy_frac - Default is None. If changed, this will say in the title of the groundtrack what percentage of the data has canopy photon data. Low canopy fraction could indicate poor quality data. This is only displayed if Detail = 2.
-    keep_flagged - Default is True. If None, we throw out tracks that have segments with zero photon returns.
     """
     
     # print(dirpath, file_index)
@@ -820,9 +844,16 @@ def pvpg_parallel(dirpath, atl03path, atl08path, coords, width=4, height=4, f_sc
     lats = np.arange(min_lat + small_box_lat / 2,
                      max_lat + small_box_lat / 2,
                      small_box_lat)
+    # if follow_beams == 0:
     lons = np.arange(min_lon + small_box_lon / 2,
                      max_lon + small_box_lon / 2,
                      small_box_lon)
+
+    LATS = []
+    LONS = []
+
+    ALL_LATS = []
+    ALL_LONS = []
     
     foldername = dirpath.split('/')[-2]
     # print(lats, lons)
@@ -830,19 +861,19 @@ def pvpg_parallel(dirpath, atl03path, atl08path, coords, width=4, height=4, f_sc
     # This will hold all of the data in one place:
     # [[Eg, Ev, Beam 1],...[Eg,Ev,Beam 1],[Eg,Ev,Beam 2],...,[Eg,Ev,Beam6],[Eg,Ev,Beam 6]]
     # This will be made into a dataframe later.
-    Eg = [[] for _ in range(len(lats)*len(lons))]
-    Ev = [[] for _ in range(len(lats)*len(lons))]
+    Eg = [[] for _ in range(3*len(lats)*len(lons))]
+    Ev = [[] for _ in range(3*len(lats)*len(lons))]
     #EvEg = [[] for _ in range(len(lats)*len(lons))]
-    trad_cc = [[] for _ in range(len(lats)*len(lons))]
-    beam_str = [[] for _ in range(len(lats)*len(lons))]
-    beam = [[] for _ in range(len(lats)*len(lons))]
-    data_quantity = [[] for _ in range(len(lats)*len(lons))]
+    trad_cc = [[] for _ in range(3*len(lats)*len(lons))]
+    beam_str = [[] for _ in range(3*len(lats)*len(lons))]
+    beam = [[] for _ in range(3*len(lats)*len(lons))]
+    data_quantity = [[] for _ in range(3*len(lats)*len(lons))]
 
     # Define base variable names
     variable_names = [
         'msw_flag', 'night_flag', 'asr', 'canopy_openness', 
         'snr', 'segment_cover', 'segment_landcover', 
-        'h_te_interp', 'h_te_std', 'terrain_slope', 'longitude', 'latitude',
+        'h_te_best_fit', 'h_te_std', 'terrain_slope', 'longitude', 'latitude',
         'cloud_flag_atm', 'layer_flag'
     ]
     if DW != 0:
@@ -854,24 +885,24 @@ def pvpg_parallel(dirpath, atl03path, atl08path, coords, width=4, height=4, f_sc
 
     # Initialize empty lists in both strong and weak dictionaries
     for var in variable_names:
-        var_dict[var] = [[] for _ in range(len(lats)*len(lons))]
+        var_dict[var] = [[] for _ in range(3*len(lats)*len(lons))]
 
     #EvEg = [-1 for _ in range(len(lats)*len(lons))]
     
-    dataset = [[] for _ in range(len(lats)*len(lons))]
+    dataset = [[] for _ in range(3*len(lats)*len(lons))]
     
     # Holds all of the X data to plot later.
-    plotX = [[] for _ in range(len(lats)*len(lons))]
+    plotX = [[] for _ in range(3*len(lats)*len(lons))]
     
     # Holds all of the Y data to plot later.
-    plotY = [[] for _ in range(len(lats)*len(lons))]
+    plotY = [[] for _ in range(3*len(lats)*len(lons))]
     
     # Holds all of the ATL03 objects to plot groundtracks later
-    atl03s = [[] for _ in range(len(lats)*len(lons))]
+    atl03s = [[] for _ in range(3*len(lats)*len(lons))]
 
     # To find the starting slope guess
-    slope_init = [[] for _ in range(len(lats)*len(lons))]
-    slope_weight = [[] for _ in range(len(lats)*len(lons))]
+    slope_init = [[] for _ in range(3*len(lats)*len(lons))]
+    slope_weight = [[] for _ in range(3*len(lats)*len(lons))]
     
 #     for i in range(len(lats)*len(lons)):
 #         dataset.append([])
@@ -918,7 +949,7 @@ def pvpg_parallel(dirpath, atl03path, atl08path, coords, width=4, height=4, f_sc
     A.close()
 
     #Keep indices of colors to plot regression lines later:
-    colors = [[] for _ in range(len(lats)*len(lons))]
+    colors = [[] for _ in range(3*len(lats)*len(lons))]
     
     # Extracting date and time from the filename
     mid_date = parse_filename_datetime(atl03path)
@@ -927,8 +958,10 @@ def pvpg_parallel(dirpath, atl03path, atl08path, coords, width=4, height=4, f_sc
     
     # Holds the maximum of the successfully read Ev values to use as y-intercept
     # guesses in the regression
-    intercepts = [[] for _ in range(len(lats)*len(lons))]
-    maxes = [[] for _ in range(len(lats)*len(lons))]
+    intercepts = [[] for _ in range(3*len(lats)*len(lons))]
+    maxes = [[] for _ in range(3*len(lats)*len(lons))]
+
+    K = 0
     
     # Now that we have assurances that the data is good quality,
     # we loop through the ground tracks
@@ -940,40 +973,40 @@ def pvpg_parallel(dirpath, atl03path, atl08path, coords, width=4, height=4, f_sc
             # print(atl03path, gt, atl08path)
             atl03 = get_atl03_struct(atl03path, gt, atl08path)
         except (KeyError, ValueError, OSError, IndexError) as e:
-            for k in range(len(lats)*len(lons)):
-                plotX[k].append([])
-                plotY[k].append([])
-            # msw_flag = np.concatenate((msw_flag,-1))
-            # night_flag = np.concatenate((night_flag,-1))
-            # asr = np.concatenate((asr,-1))
-                Eg[k].append([-1])
-                Ev[k].append([-1])
-                data_quantity[k].append([-1])
-                #EvEg[k].append([-1])
-                trad_cc[k].append([-1])
-                for var in variable_names:
-                    var_dict[var][k].append([-1])
-                beam_str[k].append([-1])
-                beam[k].append([-1])
+            # for k in range(len(lats)*len(lons)):
+            #     plotX[k].append([])
+            #     plotY[k].append([])
+            # # msw_flag = np.concatenate((msw_flag,-1))
+            # # night_flag = np.concatenate((night_flag,-1))
+            # # asr = np.concatenate((asr,-1))
+            #     Eg[k].append([-1])
+            #     Ev[k].append([-1])
+            #     data_quantity[k].append([-1])
+            #     #EvEg[k].append([-1])
+            #     trad_cc[k].append([-1])
+            #     for var in variable_names:
+            #         var_dict[var][k].append([-1])
+            #     beam_str[k].append([-1])
+            #     beam[k].append([-1])
             print(f"Failed to open ATL03 file for {foldername} file {file_index}'s beam {i+1}.")
             continue
             
         try:
             atl08 = get_atl08_struct(atl08path, gt, atl03)
         except (KeyError, ValueError, OSError) as e:
-            for k in range(len(lats)*len(lons)):
-                plotX[k].append([])
-                plotY[k].append([])
+            # for k in range(len(lats)*len(lons)):
+            #     plotX[k].append([])
+            #     plotY[k].append([])
                 
-                Eg[k].append([-1])
-                Ev[k].append([-1])
-                data_quantity[k].append([-1])
-                #EvEg[k].append([-1])
-                trad_cc[k].append([-1])
-                for var in variable_names:
-                    var_dict[var][k].append([-1])
-                beam_str[k].append([-1])
-                beam[k].append([-1])
+            #     Eg[k].append([-1])
+            #     Ev[k].append([-1])
+            #     data_quantity[k].append([-1])
+            #     #EvEg[k].append([-1])
+            #     trad_cc[k].append([-1])
+            #     for var in variable_names:
+            #         var_dict[var][k].append([-1])
+            #     beam_str[k].append([-1])
+            #     beam[k].append([-1])
             print(f"Failed to open ATL08 file for {foldername} file {file_index}'s beam {i+1}.")
             continue
         
@@ -987,26 +1020,26 @@ def pvpg_parallel(dirpath, atl03path, atl08path, coords, width=4, height=4, f_sc
         
         if rebinned != 0:
             if atl08.df.shape[0] == 0:
-                for k in range(len(lats)*len(lons)):
-                    plotX[k].append([])
-                    plotY[k].append([])
+                # for k in range(len(lats)*len(lons)):
+                #     plotX[k].append([])
+                #     plotY[k].append([])
                     
-                    Eg[k].append([-1])
-                    Ev[k].append([-1])
-                    data_quantity[k].append([-1])
-                    #EvEg[k].append([-1])
-                    trad_cc[k].append([-1])
-                    for var in variable_names:
-                        var_dict[var][k].append([-1])
-                    beam_str[k].append([-1])
-                    beam[k].append([-1])
+                #     Eg[k].append([-1])
+                #     Ev[k].append([-1])
+                #     data_quantity[k].append([-1])
+                #     #EvEg[k].append([-1])
+                #     trad_cc[k].append([-1])
+                #     for var in variable_names:
+                #         var_dict[var][k].append([-1])
+                #     beam_str[k].append([-1])
+                #     beam[k].append([-1])
                 print(f"Nothing in rebinned section for {foldername} file {file_index}'s beam {i+1}.")
                 continue
             atl08.df = rebin_atl08(atl03, atl08, gt, rebinned, res_field)
 
         # print(str(list(atl08.df.columns)))
         
-        atl08.df = atl08.df[(atl08.df.photon_rate_can_nr < 10) & (atl08.df.photon_rate_te < 10)]# & (atl08.df.h_canopy < 100)]
+        atl08.df = atl08.df[(atl08.df.photon_rate_can_nr < 16) & (atl08.df.photon_rate_te < 16)]# & (atl08.df.h_canopy < 100)]
         
         # print(len(atl08.df))
         # NEW BIT FOR LAND COVER CLASSIFICATION ##############################################################################
@@ -1014,286 +1047,326 @@ def pvpg_parallel(dirpath, atl03path, atl08path, coords, width=4, height=4, f_sc
         if DW != 0:
             filepath = find_dynamicworld_file(foldername)
             da = rioxarray.open_rasterio(filepath, masked=True).rio.reproject("EPSG:4326")
-            atl08.df['DW'] = da.sel(band=1).interp(
-                y=("points", atl08.df.latitude.values),
-                x=("points", atl08.df.longitude.values),
-                method="nearest"
-            ).values
-            atl08.df = atl08.df[~atl08.df['DW'].isin([0])]
-        
+
+            if atl08.df.shape[0] == 0:
+                # Ensure the DW column exists even if there are no rows,
+                # and *skip* the expensive interpolation that would fail on empty coords.
+                atl08.df['DW'] = np.array([], dtype='float32')
+            else:
+                atl08.df['DW'] = da.sel(band=1).interp(
+                    y=("points", atl08.df.latitude.values),
+                    x=("points", atl08.df.longitude.values),
+                    method="nearest"
+                ).values
+
+        # Use DynamicWorld for land-cover masking when available; fall back to Corine otherwise
         if landcover == 'forest':
-            atl08.df = atl08.df[atl08.df['segment_landcover'].isin([111,112,113,114,115,116,121,122,123,124,125,126])]
+            if DW != 0:
+                # DynamicWorld: 1 = trees
+                atl08.df = atl08.df[atl08.df['DW'] == 1]
+            else:
+                # Original Corine-based forest mask
+                atl08.df = atl08.df[atl08.df['segment_landcover'].isin(
+                    [111,112,113,114,115,116,121,122,123,124,125,126]
+                )]
         elif landcover == 'all':
-            atl08.df = atl08.df[~atl08.df['segment_landcover'].isin([60,40,100,50,70,80,200,0])]
+            if DW != 0:
+                # Keep everything except obvious non-land / no-data (here: DW == 0)
+                atl08.df = atl08.df[~atl08.df['DW'].isin([0])]
+            else:
+                atl08.df = atl08.df[~atl08.df['segment_landcover'].isin(
+                    [60,40,100,50,70,80,200,0]
+                )]
         # print(atl08.df)
-        # print(atl08.df.h_te_interp)
+        # print(atl08.df.h_)
         if altitude != None:
-            atl08.df = atl08.df[abs(atl08.df['h_te_interp'] - altitude) <= alt_thresh]
+            atl08.df = atl08.df[abs(atl08.df['h_te_best_fit'] - altitude) <= alt_thresh]
         
         if trim_atmospheric != 0:
-            atl08.df = atl08.df[(atl08.df['layer_flag'] < 1)|(atl08.df['msw_flag']<1)]
+            atl08.df = atl08.df[(atl08.df['layer_flag'] == 0)|(atl08.df['msw_flag'] == 0)]
         # print(len(atl08.df))
         if sat_flag != 0:
             atl08.df = atl08.df[atl08.df['sat_flag'] == 0]
 
-            # print(len(atl08.df))
-
-        # print(atl08.df)
-        # print(atl08.df['landcover'])
-        # print(lats,lons)
-        
-        k = 0
-        for lat in lats:
-            for lon in lons:
-                polygon = make_box((lon,lat), small_box/2,small_box/2)
-                sub_min_lon, sub_min_lat, sub_max_lon, sub_max_lat = polygon.total_bounds
-                # print(atl08.df)
-                atl03_temp = atl03.df[(atl03.df['lon_ph'] >= sub_min_lon) & (atl03.df['lon_ph'] <= sub_max_lon) &\
-                                        (atl03.df['lat_ph'] >= sub_min_lat) & (atl03.df['lat_ph'] <= sub_max_lat)].copy()
-                atl08_temp = atl08.df[(atl08.df['longitude'] >= sub_min_lon) & (atl08.df['longitude'] <= sub_max_lon) &\
-                                        (atl08.df['latitude'] >= sub_min_lat) & (atl08.df['latitude'] <= sub_max_lat)].copy()
-                
-                if atl08_temp.shape[0] == 0:
-                    # print(f'Beam {i + 1}, box {k} in {foldername} file {file_index} has no data.')
-                    plotX[k].append([])
-                    plotY[k].append([])
-                    
-                    Eg[k].append([-1])
-                    Ev[k].append([-1])
-                    data_quantity[k].append([-1])
-                    #EvEg[k].append([-1])
-                    trad_cc[k].append([-1])
-                    for var in variable_names:
-                        var_dict[var][k].append([-1])
-                    beam_str[k].append([-1])
-                    beam[k].append([-1])
-                    k += 1
-                    continue
-                # Retrieve the canopy fraction (fraction of segments that contain any
-                # canopy photons) if the user wants it.
-        
-                # X and Y are data for the regression
-                X = atl08_temp.photon_rate_te
-                Y = atl08_temp.photon_rate_can_nr
-
-                if i + 1 == 3:
-                    X /= 0.85
-                    Y /= 0.85
-
-                layer_flag = atl08_temp.layer_flag
-                msw_flag = atl08_temp.msw_flag
-                cloud_flag_atm = atl08_temp.cloud_flag_atm
-        
-                # Save it for plotting after the loop goes through all the groundtracks
-                plotX[k].append(X)
-                plotY[k].append(Y)
-        
-#         if atl03.df.size != 0:
-#             # Save the ATL03 object
-#             atl03s.append(atl03)
-#             colors.append(i)
-            
-        
-                if len(Y) < threshold:
-                    print(f'Beam {i + 1}, box {k} in {foldername} file {file_index} has insufficient data.')
-                    Eg[k].append([-1])
-                    Ev[k].append([-1])
-                    data_quantity[k].append([-1])
-                    #EvEg[k].append([-1])
-                    trad_cc[k].append([-1])
-                    for var in variable_names:
-                        var_dict[var][k].append([-1])
-                    beam_str[k].append([-1])
-                    beam[k].append([-1])
-                    k += 1
-                    continue
-                else:
-                    atl03s[k].append(atl03)
-                    colors[k].append(i)
-
-                    Eg[k].append(X)
-                    Ev[k].append(Y)
-                    data_quantity[k].append([len(X) for x in range(len(X))])
-                    #EvEg[k].append(Y/X)
-                    trad_cc[k].append((atl08_temp['n_ca_photons']+atl08_temp['n_toc_photons'])/\
-                                             (atl08_temp['n_ca_photons']+atl08_temp['n_toc_photons']+atl08_temp['n_te_photons']))
-                    for var in variable_names:
-                        # print(var, atl08_temp[var])
-                        var_dict[var][k].append(atl08_temp[var])
-                    
-                    if i % 2 == 0:
-                        beam_str[k].append(['strong' for _ in range(len(atl08_temp['n_ca_photons']))])
-                            # print(strong_dict[f"{var}_strong"])
-                    else:
-                        beam_str[k].append(['weak' for _ in range(len(atl08_temp['n_ca_photons']))])
-                    beam[k].append([i+1 for _ in range(len(atl08_temp['n_ca_photons']))])
-                    
-                # print(X)
-                # print(Y)
-                # Save each individual data point from the ground track along with the Beam it belongs to.
-                for x, y, lf, mf, cfa in zip(X,Y, layer_flag, msw_flag, cloud_flag_atm):
-                    dataset[k].append([x, y, beam_names[i], lf, mf, cfa])
-
-                # tweaking starting parameters
-                ############################################################
-
-                intercept, slope = starting_intercept(X,Y)
-                        
-                slope_init[k].append(slope)
-                # slope_init[k].append(-.3)
-                slope_weight[k].append(len(Y))
-                # Save the initial y_intercept guess
-                intercepts[k].append(min(intercept,16))
-                maxes[k].append(16)
-
-                # print(atl08_temp)
-                # print(Eg[k])
-                
-                k += 1
-        #############################################################
+        k = K
+        if i % 2 == 0:
+            LATS = []
+            LONS = []
+            lats = np.arange(min_lat + small_box_lat / 2,
+                 max_lat + small_box_lat / 2,
+                 small_box_lat)
+            if len(lats) <= 1:
+                lats = [(min_lat + max_lat)/2]
+            # print(lats)
+        if i % 2 == 1:
+            if len(LONS) == 0:
                 continue
+            lats, lons = LATS, LONS
+
+        for n, lat in enumerate(lats):
+
+            if i % 2 == 0:
+                polygon = make_box((coords[1],lat), width, small_box/2)
+                sub_min_lon, sub_min_lat, sub_max_lon, sub_max_lat = polygon.total_bounds
+                
+                atl03_temp = atl03.df[(atl03.df['lat_ph'] >= sub_min_lat) & (atl03.df['lat_ph'] <= sub_max_lat)].copy()
+                atl08_temp = atl08.df[(atl08.df['latitude'] >= sub_min_lat) & (atl08.df['latitude'] <= sub_max_lat)].copy()
+    
+                if len(atl08_temp) != 0:
+                    lon = atl08_temp.longitude.mean()
+                else:
+                    print(f'Beam {i + 1}, box {n} in {foldername} file {file_index} has no data.')
+                    continue
+
+            if i % 2 == 1:
+                lon = lons[n]
+
+            # print(lons,lon)
+            polygon = make_box((lon,lat), small_box/2,small_box/2)
+            sub_min_lon, sub_min_lat, sub_max_lon, sub_max_lat = polygon.total_bounds
+            # print(atl08.df)
+            atl03_temp = atl03.df[(atl03.df['lon_ph'] >= sub_min_lon) & (atl03.df['lon_ph'] <= sub_max_lon) &\
+                                    (atl03.df['lat_ph'] >= sub_min_lat) & (atl03.df['lat_ph'] <= sub_max_lat)].copy()
+            atl08_temp = atl08.df[(atl08.df['longitude'] >= sub_min_lon) & (atl08.df['longitude'] <= sub_max_lon) &\
+                                    (atl08.df['latitude'] >= sub_min_lat) & (atl08.df['latitude'] <= sub_max_lat)].copy()
+
+            # print(atl08_temp.shape[0])
+            if atl08_temp.shape[0] < threshold:
+                print(f'Beam {i + 1}, box {n} in {foldername} file {file_index} has insufficient data.')
+                # plotX[k].append([])
+                # plotY[k].append([])
+                
+                # Eg[k].append([-1])
+                # Ev[k].append([-1])
+                # data_quantity[k].append([-1])
+                # #EvEg[k].append([-1])
+                # trad_cc[k].append([-1])
+                # for var in variable_names:
+                #     var_dict[var][k].append([-1])
+                # beam_str[k].append([-1])
+                # beam[k].append([-1])
+                # k += 1
+                if i % 2 == 1:
+                    k += 1
+                continue
+            # Retrieve the canopy fraction (fraction of segments that contain any
+            # canopy photons) if the user wants it.
+    
+            # X and Y are data for the regression
+            X = atl08_temp.photon_rate_te
+            Y = atl08_temp.photon_rate_can_nr
+
+            if i + 1 == 3:
+                X /= 0.85
+                Y /= 0.85
+
+            layer_flag = atl08_temp.layer_flag
+            msw_flag = atl08_temp.msw_flag
+            cloud_flag_atm = atl08_temp.cloud_flag_atm
+
+            # Save it for plotting after the loop goes through all the groundtracks
+            plotX[k].append(X)
+            plotY[k].append(Y)
+
+            if i % 2 == 0:
+                LATS.append(lat)
+                LONS.append(lon)
+            
+            atl03s[k].append(atl03_temp)
+            colors[k].append(i)
+
+            Eg[k].append(X)
+            Ev[k].append(Y)
+            data_quantity[k].append([len(X) for x in range(len(X))])
+            #EvEg[k].append(Y/X)
+            trad_cc[k].append((atl08_temp['n_ca_photons']+atl08_temp['n_toc_photons'])/\
+                                     (atl08_temp['n_ca_photons']+atl08_temp['n_toc_photons']+atl08_temp['n_te_photons']))
+            for var in variable_names:
+                # print(var, atl08_temp[var])
+                var_dict[var][k].append(atl08_temp[var])
+            
+            if i % 2 == 0:
+                beam_str[k].append(['strong' for _ in range(len(atl08_temp['n_ca_photons']))])
+                    # print(strong_dict[f"{var}_strong"])
+            else:
+                beam_str[k].append(['weak' for _ in range(len(atl08_temp['n_ca_photons']))])
+            beam[k].append([i+1 for _ in range(len(atl08_temp['n_ca_photons']))])
+                
+            # print(X)
+            # print(Y)
+            # Save each individual data point from the ground track along with the Beam it belongs to.
+            for x, y, lf, mf, cfa in zip(X,Y, layer_flag, msw_flag, cloud_flag_atm):
+                dataset[k].append([x, y, beam_names[i], lf, mf, cfa])
+
+            # tweaking starting parameters
+            ############################################################
+
+            intercept, slope = starting_intercept(X,Y)
+                    
+            slope_init[k].append(min(max(slope, -100 + 1e-3), -1/100 - 1e-3))
+            # slope_init[k].append(-.3)
+            slope_weight[k].append(len(Y))
+            # Save the initial y_intercept guess
+            intercepts[k].append(min(intercept,16))
+            maxes[k].append(16)
+
+            k += 1
+                
+            continue
+
+        if i % 2 == 0:
+            ALL_LATS.extend(LATS)
+            ALL_LONS.extend(LONS)
+
+        if i % 2 == 1:
+            LATS = []
+            LONS = []
+            K = k
+                
             
     rows = []
 
-    del atl03
-    del atl08
-    gc.collect()
+    # del atl03
+    # del atl08
+    # gc.collect()
     
     k = 0
-    for lat in lats:
-        for lon in lons:
-            if len(dataset[k]) == 0:
-                k+=1
-                continue
-            
-            slope_weight[k] /= np.sum([slope_weight[k]])
-            slope_init[k] = np.dot(slope_init[k],slope_weight[k])
-            
-            # Create DataFrame
-            df = pd.DataFrame(dataset[k], columns=['Eg', 'Ev', 'gt', 'layer_flag', 'msw_flag', 'cloud_flag_atm'])
-            # Dummy encode the categorical variable
-            df_encoded = pd.get_dummies(df, columns=['gt'], prefix='', prefix_sep='')
-            
-            coefs, xy, full_xy, data_quality = odr(df_encoded, intercepts = intercepts[k], maxes = maxes[k], init = slope_init[k],\
-                        lb=lb, ub=ub, model = model, res = res, loss=loss, f_scale=f_scale,
-                              outlier_removal=outlier_removal, method=method, w=w)
-
-            # Create the array of empty lists
-            xx = [[] for _ in range(6)]
-            yy = [[] for _ in range(6)]
-            
-            # Iterate over each beam column and append the Eg values where the condition is True
-            for i in range(1, 7):  # Beam 1 to Beam 6
-                if f'Beam {i}' in xy.columns:
-                    xx[i-1] = xy[xy[f'Beam {i}'] == True]['Eg']
-                    yy[i-1] = xy[xy[f'Beam {i}'] == True]['Ev']
-
-            # print(plotX[k])
-            # print(xx)
-
-            if show_me_the_good_ones == False or data_quality == 0:
-                
-            
-                if len(colors) == 0:
-                    graph_detail = 0
-                    
-                if graph_detail == 3:
-                    plot_parallel(atl03s = atl03s[k],
-                                  coefs = coefs,
-                                  colors = colors[k],
-                                  title_date = title_date,
-                                  X = plotX[k],
-                                  Y = plotY[k],
-                                  xx = xx,
-                                  yy = yy,
-                                  beam = beam_focus,
-                                  file_index = file_index,
-                                  three = True)
-                    
-                elif graph_detail == 2:
-                    plot_parallel(atl03s = atl03s[k],
-                                  coefs = coefs,
-                                  colors = colors[k],
-                                  title_date = title_date,
-                                  X = plotX[k],
-                                  Y = plotY[k],
-                                  xx = xx,
-                                  yy = yy,
-                                  beam = beam_focus,
-                                  file_index = file_index)
-    
-                # Activate this if you don't want the groundtracks, just the plot
-                elif graph_detail == 1:
-                    plot_graph(coefs = coefs,
-                               colors = colors[k],
-                               title_date = title_date,
-                               X = plotX[k],
-                               Y = plotY[k],
-                               xx = xx,
-                               yy = yy,
-                               coords=(lat,lon),
-                               beam = beam_focus,
-                               file_index = file_index,
-                               data_quality = data_quality)
-
-            # print(asr[k])
-            # print(meanEgstrong[k])
-
-            # print(non_negative_subset(asr[k]))
-
-            # if len(meanEgstrong) > 0:
-            #     EvEg[k] = safe_mean(non_negative_subset(meanEvstrong[k]))/safe_mean(non_negative_subset(meanEgstrong[k]))
-
-            # for entry in Eg[k]:
-            #     print(type(
-            # print(Eg[k])
-            indices_to_insert = [i+1 for i, entry in enumerate(Eg[k]) if -1 in entry]
-            for index in indices_to_insert:
-                coefs = np.insert(coefs, index, None)
-                
-            
-            if np.all(np.isnan([coefs[1],coefs[3],coefs[5]])):
-                y_strong = np.nan
-            else:
-                y_strong = np.nanmean([coefs[1],coefs[3],coefs[5]])
-                y_strong_max = np.nanmax([coefs[1],coefs[3],coefs[5]])
-                
-            if np.all(np.isnan([coefs[2],coefs[4],coefs[6]])):
-                y_weak = np.nan
-            else:
-                y_weak = np.nanmean([coefs[2],coefs[4],coefs[6]])
-                y_weak_max = np.nanmax([coefs[2],coefs[4],coefs[6]])
-                
-            if np.any(np.isnan([y_strong, y_weak])):
-                pv_ratio_mean = np.nan
-                pv_ratio_max = np.nan
-            else:
-                pv_ratio_mean = y_strong/y_weak
-                pv_ratio_max = y_strong_max/y_weak_max
-            
-            y_intercept_dict = {1: coefs[1], 2: coefs[2], 3: coefs[3], 4: coefs[4], 5: coefs[5], 6: coefs[6]}
-            x_intercept_dict = {1: -coefs[1]/coefs[0], 2: -coefs[2]/coefs[0], 3: -coefs[3]/coefs[0], 4: -coefs[4]/coefs[0],
-                               5: -coefs[5]/coefs[0], 6: -coefs[6]/coefs[0]}
-
-            # print(x_intercept_dict['strong'])
-            # print(non_negative_subset(msw_flag[k]),msw_flag[k])
-
-            # Append the row dynamically
-            for j in range(len(non_negative_subset(Eg[k]))):
-                row_data = [foldername, table_date, lon, lat, -coefs[0],
-                            y_intercept_dict[non_negative_subset(beam[k])[j]], x_intercept_dict[non_negative_subset(beam[k])[j]],
-                            non_negative_subset(Eg[k])[j], non_negative_subset(Ev[k])[j],
-                            non_negative_subset(data_quantity[k])[j], data_quality, altitude, pv_ratio_mean, pv_ratio_max,
-                            non_negative_subset(trad_cc[k])[j], non_negative_subset(beam[k])[j], non_negative_subset(beam_str[k])[j]]
-                row_data.append(full_xy['Outlier'].iloc[j])
-
-                # Add the rest of the strong-weak pairs dynamically
-                for var in variable_names:  # Start from msw, as meanEg and meanEv are already included
-                    # var = f"{var}"
-                    row_data.append(non_negative_subset(var_dict[var][k])[j])
-                # Append the row to the rows list
-                rows.append(row_data)
+    for lat, lon in zip(ALL_LATS, ALL_LONS):
+        if len(dataset[k]) == 0:
             k+=1
+            continue
+        
+        slope_weight[k] /= np.sum([slope_weight[k]])
+        slope_init[k] = np.dot(slope_init[k],slope_weight[k])
+        
+        # Create DataFrame
+        df = pd.DataFrame(dataset[k], columns=['Eg', 'Ev', 'gt', 'layer_flag', 'msw_flag', 'cloud_flag_atm'])
+        # Dummy encode the categorical variable
+        df_encoded = pd.get_dummies(df, columns=['gt'], prefix='', prefix_sep='')
+        
+        coefs, xy, full_xy, data_quality = odr(df_encoded, intercepts = intercepts[k], maxes = maxes[k], init = slope_init[k],\
+                    lb=lb, ub=ub, model = model, res = res, loss=loss, f_scale=f_scale,
+                          outlier_removal=outlier_removal, method=method, w=w)
+
+        # Create the array of empty lists
+        xx = [[] for _ in range(6)]
+        yy = [[] for _ in range(6)]
+
+        beams_in_play = []
+        
+        # Iterate over each beam column and append the Eg values where the condition is True
+        for i in range(1, 7):  # Beam 1 to Beam 6
+            if f'Beam {i}' in xy.columns:
+                xx[i-1] = xy[xy[f'Beam {i}'] == True]['Eg']
+                yy[i-1] = xy[xy[f'Beam {i}'] == True]['Ev']
+                beams_in_play.append(i)
+
+        # print(plotX[k])
+        # print(xx)
+
+        if show_me_the_good_ones == 0 or data_quality == 0:
+        
+            if len(colors) == 0:
+                graph_detail = 0
+                
+            if graph_detail == 3:
+                plot_parallel(atl03s = atl03s[k],
+                              coefs = coefs,
+                              colors = colors[k],
+                              title_date = title_date,
+                              X = plotX[k],
+                              Y = plotY[k],
+                              xx = xx,
+                              yy = yy,
+                              beam = beam_focus,
+                              file_index = file_index,
+                              three = True,
+                              data_quality = 0)
+                
+            elif graph_detail == 2:
+                plot_parallel(atl03s = atl03s[k],
+                              coefs = coefs,
+                              colors = colors[k],
+                              title_date = title_date,
+                              X = plotX[k],
+                              Y = plotY[k],
+                              xx = xx,
+                              yy = yy,
+                              beam = beam_focus,
+                              file_index = file_index,
+                              data_quality = data_quality)
+
+            # Activate this if you don't want the groundtracks, just the plot
+            elif graph_detail == 1:
+                plot_graph(coefs = coefs,
+                           colors = colors[k],
+                           title_date = title_date,
+                           X = plotX[k],
+                           Y = plotY[k],
+                           xx = xx,
+                           yy = yy,
+                           coords=(lat,lon),
+                           beam = beam_focus,
+                           file_index = file_index,
+                           data_quality = data_quality)
+
+        # print(asr[k])
+        # print(meanEgstrong[k])
+
+        # print(non_negative_subset(asr[k]))
+
+        # if len(meanEgstrong) > 0:
+        #     EvEg[k] = safe_mean(non_negative_subset(meanEvstrong[k]))/safe_mean(non_negative_subset(meanEgstrong[k]))
+
+        # for entry in Eg[k]:
+        #     print(type(
+        # print(Eg[k])
+        indices_to_insert = [i for i in range(1,7) if i not in beams_in_play]
+        for index in indices_to_insert:
+            coefs = np.insert(coefs, index, None)
+        
+        if np.all(np.isnan([coefs[1],coefs[3],coefs[5]])):
+            y_strong = np.nan
+        else:
+            y_strong = np.nanmean([coefs[1],coefs[3],coefs[5]])
+            y_strong_max = np.nanmax([coefs[1],coefs[3],coefs[5]])
+            
+        if np.all(np.isnan([coefs[2],coefs[4],coefs[6]])):
+            y_weak = np.nan
+        else:
+            y_weak = np.nanmean([coefs[2],coefs[4],coefs[6]])
+            y_weak_max = np.nanmax([coefs[2],coefs[4],coefs[6]])
+            
+        if np.any(np.isnan([y_strong, y_weak])):
+            pv_ratio_mean = np.nan
+            pv_ratio_max = np.nan
+        else:
+            pv_ratio_mean = y_strong/y_weak
+            pv_ratio_max = y_strong_max/y_weak_max
+        
+        y_intercept_dict = {1: coefs[1], 2: coefs[2], 3: coefs[3], 4: coefs[4], 5: coefs[5], 6: coefs[6]}
+        x_intercept_dict = {1: -coefs[1]/coefs[0], 2: -coefs[2]/coefs[0], 3: -coefs[3]/coefs[0], 4: -coefs[4]/coefs[0],
+                           5: -coefs[5]/coefs[0], 6: -coefs[6]/coefs[0]}
+
+        # print(x_intercept_dict['strong'])
+        # print(non_negative_subset(msw_flag[k]),msw_flag[k])
+
+        # Append the row dynamically
+        for j in range(len(non_negative_subset(Eg[k]))):
+            row_data = [foldername, table_date, lon, lat, -coefs[0],
+                        y_intercept_dict[non_negative_subset(beam[k])[j]], x_intercept_dict[non_negative_subset(beam[k])[j]],
+                        non_negative_subset(Eg[k])[j], non_negative_subset(Ev[k])[j],
+                        non_negative_subset(data_quantity[k])[j], data_quality, altitude, pv_ratio_mean, pv_ratio_max,
+                        non_negative_subset(trad_cc[k])[j], non_negative_subset(beam[k])[j], non_negative_subset(beam_str[k])[j]]
+            row_data.append(full_xy['Outlier'].iloc[j])
+
+            # Add the rest of the strong-weak pairs dynamically
+            for var in variable_names:  # Start from msw, as meanEg and meanEv are already included
+                # var = f"{var}"
+                row_data.append(non_negative_subset(var_dict[var][k])[j])
+            # Append the row to the rows list
+            rows.append(row_data)
+        k+=1
 
     columns_list = ['camera', 'date', 'lon', 'lat', 'pvpg', 'pv', 'pg', 'Eg', 'Ev',
                     'data_quantity', 'data_quality', 'altitude', 'pv_ratio_mean', 'pv_ratio_max', 'trad_cc','beam', 'beam_str',
