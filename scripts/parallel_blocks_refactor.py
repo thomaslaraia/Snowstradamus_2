@@ -27,6 +27,11 @@ import warnings
 warnings.filterwarnings("ignore", module="sklearn.neighbors._lof")
 warnings.filterwarnings("ignore", module="scipy.interpolate._interpolate")
 
+import yaml
+
+with open("../config.yaml", "r") as f:
+    cfg = yaml.safe_load(f)
+
 def divide_arrays(X, Y, n=2):
     combined = list(zip(X, Y))
     combined.sort(key=lambda tup: tup[0])
@@ -193,11 +198,10 @@ def plot(df, ax):
     ax.set_ylabel('Elevation (m)')
     return
 
-def plot_pvpg(
+def plot_parallel(
     coefs, colors, title_date, X, Y, xx, yy,
-    beam=None, file_index=None, data_quality=0, graph_detail=1, atl03s=None,
+    beam=None, file_index=None, graph_detail=1, atl03s=None,
     canopy_frac=None, terrain_frac=None, coords=None):
-    # config the data_quality
     """
     Combined plotting function for pvpg_parallel.
 
@@ -218,8 +222,6 @@ def plot_pvpg(
         List of beam numbers to show, e.g. [3, 4]. If None, all available beams are shown.
     file_index : int, optional
         File index to include in the title.
-    data_quality : int, optional
-        Index into title_color.
     graph_detail : int, optional
         1 = just the main scatter/regression plot
         2 = just the groundtrack subplots
@@ -230,11 +232,8 @@ def plot_pvpg(
         Canopy fraction by beam index, used in subplot titles when graph_detail == 2 or 3.
     terrain_frac : list, optional
         Terrain fraction by beam index, used in subplot titles when graph_detail == 2 or 3.
-    coords : unused, optional
-        Kept only for compatibility with your old function signature.
     """
 
-    title_color = ['black', 'red']
     beam_names = [f"Beam {i}" for i in range(1, 7)]
 
     if graph_detail == 1:
@@ -260,19 +259,19 @@ def plot_pvpg(
             ax6 = fig.add_subplot(326)
             ax_main = None
         axes = [ax1, ax2, ax3, ax4, ax5, ax6]
+    else:
+        return
 
     # Title
     if file_index is not None:
         fig.suptitle(
             title_date + ' - N = ' + str(file_index),
             fontsize=16 if graph_detail == 2 else 18,
-            color=title_color[data_quality]
         )
     else:
         fig.suptitle(
             title_date,
             fontsize=16 if graph_detail == 2 else 18,
-            color=title_color[data_quality]
         )
 
     # Groundtrack Displays
@@ -353,8 +352,7 @@ def parallel_model(params, x):
     beam_columns = [col for col in x.columns if col.startswith('Beam')]
     return common_slope*x['Eg'] + np.dot(x[beam_columns], parallel)
 
-def parallel_residuals(params, x, y, model=parallel_model, w=[1.0, 0.25]):
-    # config the w
+def parallel_residuals(params, x, y, model=parallel_model, w=cfg['w'):
     common_slope = params[0]
     model_output = model(params, x)
     residuals = (y.T.values[0] - model_output) / np.sqrt(1 + common_slope**2)
@@ -373,10 +371,9 @@ def parallel_residuals(params, x, y, model=parallel_model, w=[1.0, 0.25]):
     residuals_and_penalty = np.append(weighted_residuals, prior_penalty)
     return residuals_and_penalty
 
-def parallel_odr(dataset, intercepts, maxes, init = -1, lb = -100, ub = -1/100,
+def parallel_odr(dataset, intercepts, maxes, init = cfg['slope_init'], lb = cfg['slope_lb'], ub = cfg['slope_ub'],
                  model = parallel_model, res = parallel_residuals,
-                 loss='linear', f_scale=.1, outlier_removal = False, method='normal', w=[1.0,0.25]):
-    # config the init, lb, ub, loss, f_scale, outlier_removal, method, and w
+                 loss=cfg['loss'], f_scale=cfg['f_scale'], outlier_removal = cfg['outlier_removal'], w=cfg['w']):
     """
     Performs the parallel orthogonal distance regression on the given dataset.
     
@@ -448,3 +445,394 @@ def parallel_odr(dataset, intercepts, maxes, init = -1, lb = -100, ub = -1/100,
                                f_scale=f_scale, ftol=1e-15, xtol=1e-15, gtol=1e-15)
 
     return params.x, dataset, full_dataset
+
+def pvpg_parallel(dirpath, atl03path, atl08path, coords, width=cfg['roi_half_width'], height=cfg['roi_half_height'],\
+                  f_scale = cfg['f_scale'], loss = cfg['loss'], init = cfg['slope_init'],\
+                  lb = cfg['slope_lb'], ub = cfg['slope_ub'], file_index = None, model = parallel_model, res = parallel_residuals,\
+                  odr = parallel_odr, beam_focus = None, y_init = np.max, graph_detail = 0,\
+                  altitude=None, alt_thresh=cfg['alt_thresh'], threshold = cfg['insufficient_data_threshold'],\
+                  small_box = cfg['small_box_side'], rebinned = 0, res_field='alongtrack',
+                  outlier_removal=False, landcover = 'forest', trim_atmospheric=0, w=[1.0,0.25], sat_flag = 0,
+                  show_me_the_good_ones = 0, DW=0):
+    # some of these up here need to be config
+    """
+    Parallel regression of all tracks on a given overpass.
+
+    atl03path - Path/to/ATL03/file
+    atl08path - Path/to/matching/ATL08/file
+    f_scale - Parameter in least_squares() function when loss is nonlinear, indiciating the value of the soft margin between inlier and outlier residuals.
+    loss - string for loss parameter in least_squares().
+    init - initial slope guess for the parallel slope parameter
+    lb - Lower bound of allowed value for the slope of the regression, default -100
+    ub - Upper bound of allowed value for the slope of the regression, default -1/100
+    file_index - Index of file if cycling through an array of filenames, displayed in figure titles for a given file. Allows us to easily pick out strange cases for investigation.
+    model - model function to be used in least squares. Default is the parallel model function
+    res - Default holds the ODR residuals function to be used in least_squares(). Can hold adjusted residual functions as well.
+    odr - function that performs the orthogonal regression. Replace with great care if you do.
+    beam - Default is None. Put in input in the form of an array of integers. For example, if you only want to display pv/pg on the plot for Beams 3 and 4, the input is [3,4]
+    y_init - This is the function used to initialize the guess for the y intercept. Default is simply the maximum value, as this is expected to correspond with the data point closest to the y-intercept.
+    graph_detail - Default is 0. If set to 1, will show a single pv/pg plot for all chosen, available beams. If set to 2, will also show each available groundtrack.
+    canopy_frac - Default is None. If changed, this will say in the title of the groundtrack what percentage of the data has canopy photon data. Low canopy fraction could indicate poor quality data. This is only displayed if Detail = 2.
+    """
+
+    foldername = dirpath.split('/')[-2]
+    
+    mid_date = parse_filename_datetime(atl03path)
+    title_date = datetime_to_title(mid_date)
+    table_date = datetime_to_date(mid_date)
+
+    # This will hold all of the data in one place:
+    # [[Eg, Ev, Beam 1],...[Eg,Ev,Beam 1],[Eg,Ev,Beam 2],...,[Eg,Ev,Beam6],[Eg,Ev,Beam 6]]
+    # This will be made into a dataframe later.
+    Eg = [[] for _ in range(3*len(lats)*len(lons))]
+    Ev = [[] for _ in range(3*len(lats)*len(lons))]
+    trad_cc = [[] for _ in range(3*len(lats)*len(lons))]
+    beam_str = [[] for _ in range(3*len(lats)*len(lons))]
+    beam = [[] for _ in range(3*len(lats)*len(lons))]
+    data_quantity = [[] for _ in range(3*len(lats)*len(lons))]
+
+    # Define base variable names
+    variable_names = [
+        'msw_flag', 'night_flag', 'asr', 'canopy_openness', 
+        'snr', 'segment_cover', 'segment_landcover', 
+        'h_te_best_fit', 'h_te_std', 'terrain_slope', 'longitude', 'latitude',
+        'cloud_flag_atm', 'layer_flag'
+    ]
+    if DW != 0:
+        variable_names.append('DW') # config this
+    var_dict = {}
+    for var in variable_names:
+        var_dict[var] = [[] for _ in range(3*len(lats)*len(lons))]
+
+    dataset = [[] for _ in range(3*len(lats)*len(lons))]
+
+    # for plotting
+    plotX = [[] for _ in range(3*len(lats)*len(lons))]
+    plotY = [[] for _ in range(3*len(lats)*len(lons))]
+    atl03s = [[] for _ in range(3*len(lats)*len(lons))]
+    colors = [[] for _ in range(3*len(lats)*len(lons))]
+
+    # for starting inits
+    slope_init = [[] for _ in range(3*len(lats)*len(lons))]
+    slope_weight = [[] for _ in range(3*len(lats)*len(lons))]
+    intercepts = [[] for _ in range(3*len(lats)*len(lons))]
+    maxes = [[] for _ in range(3*len(lats)*len(lons))]
+
+    # satellite orientation
+    A = h5py.File(atl03path, 'r')
+    if list(A['orbit_info']['sc_orient'])[0] == 1:
+    	strong = ['gt1r', 'gt2r', 'gt3r']
+    	weak = ['gt1l', 'gt2l', 'gt3l']
+    elif list(A['orbit_info']['sc_orient'])[0] == 0:
+        strong = ['gt3l', 'gt2l', 'gt1l']
+        weak = ['gt3r', 'gt2r', 'gt1r']
+    else:
+        print('Satellite in transition orientation.')
+        A.close()
+        return 0
+    tracks = [strong[0], weak[0], strong[1], weak[1], strong[2], weak[2]]
+    A.close()
+
+    # The only purpose of this is to keep the data organised later.
+    beam_names = [f"Beam {i}" for i in range(1,7)]
+
+    polygon = make_box(coords, width,height)
+    min_lon, min_lat, max_lon, max_lat = polygon.total_bounds
+
+    # Convert small_box from kilometers to degrees
+    km_per_degree_lat = 111  # Kilometers per degree of latitude
+    km_per_degree_lon = 111 * np.cos(np.radians(coords[1]))  # Kilometers per degree of longitude at the given latitude    
+
+    # Calculate the increment in degrees for the small box size
+    small_box_lat = small_box / km_per_degree_lat
+    small_box_lon = small_box / km_per_degree_lon
+
+    # Generate the latitude and longitude ranges using the converted small box sizes
+    lats = np.arange(min_lat + small_box_lat / 2,
+                     max_lat + small_box_lat / 2,
+                     small_box_lat)
+    lons = np.arange(min_lon + small_box_lon / 2,
+                     max_lon + small_box_lon / 2,
+                     small_box_lon)
+
+    # through the loops this will track the lat/lon pairings for each strong beam
+    LATS = []
+    LONS = []
+
+    # this holds the groups of lat/lon pairs of each strong beam
+    ALL_LATS = []
+    ALL_LONS = []
+
+    skip_weak = 0
+    box_index_base = weak_box_index_base = 0
+    for i, gt in enumerate(tracks):
+        
+        if i % 2 == 1:
+            if len(LONS) == 0:
+                continue
+        
+        if skip_weak == 1:
+            skip_weak = 0
+            continue
+        try:
+            atl03 = get_atl03_struct(atl03path, gt, atl08path)
+        except (KeyError, ValueError, OSError, IndexError) as e:
+            print(f"Failed to open ATL03 file for {foldername} file {file_index}'s beam {i+1}.")
+            if i % 2 == 1:
+                weak_box_index_base = box_index_base
+            continue
+        try:
+            atl08 = get_atl08_struct(atl08path, gt, atl03)
+        except (KeyError, ValueError, OSError) as e:
+            print(f"Failed to open ATL08 file for {foldername} file {file_index}'s beam {i+1}.")
+            if i % 2 == 1:
+                weak_box_index_base = box_index_base
+            continue
+
+        atl03.df = atl03.df[(atl03.df['lon_ph'] >= min_lon) & (atl03.df['lon_ph'] <= max_lon) &\
+                                (atl03.df['lat_ph'] >= min_lat) & (atl03.df['lat_ph'] <= max_lat)]
+        atl08.df = atl08.df[(atl08.df['longitude'] >= min_lon) & (atl08.df['longitude'] <= max_lon) &\
+                                (atl08.df['latitude'] >= min_lat) & (atl08.df['latitude'] <= max_lat)]
+        if rebinned != 0:
+            if atl08.df.shape[0] == 0:
+                print(f"Nothing to rebin for {foldername} file {file_index}'s beam {i+1}.")
+                if i % 2 == 1:
+                    weak_box_index_base = box_index_base
+                continue
+            atl08.df = rebin_atl08(atl03, atl08, gt, rebinned, res_field)
+
+        atl08.df = atl08.df[(atl08.df.photon_rate_can_nr < 16) & (atl08.df.photon_rate_te < 16)]# & (atl08.df.h_canopy < 100)]
+
+        if DW != 0:
+            filepath = find_dynamicworld_file(foldername)
+            da = rioxarray.open_rasterio(filepath, masked=True).rio.reproject("EPSG:4326")
+
+            if atl08.df.shape[0] == 0:
+                # Ensure the DW column exists even if there are no rows,
+                # and skip the interpolation that would fail on empty coords.
+                atl08.df['DW'] = np.array([], dtype='float32')
+            else:
+                atl08.df['DW'] = da.sel(band=1).interp(
+                    y=("points", atl08.df.latitude.values),
+                    x=("points", atl08.df.longitude.values),
+                    method="nearest"
+                ).values
+
+        if landcover == 'forest':
+            if DW != 0:
+                # DynamicWorld: 1 = trees
+                atl08.df = atl08.df[atl08.df['DW'] == 1]
+            else:
+                # Original Corine-based forest mask
+                atl08.df = atl08.df[atl08.df['segment_landcover'].isin(
+                    [111,112,113,114,115,116,121,122,123,124,125,126]
+                )]
+        elif landcover == 'all':
+            if DW != 0:
+                # Keep everything except obvious non-land / no-data (here: DW == 0)
+                atl08.df = atl08.df[~atl08.df['DW'].isin([0])]
+            else:
+                atl08.df = atl08.df[~atl08.df['segment_landcover'].isin(
+                    [60,40,100,50,70,80,200,0]
+                )]
+
+        if altitude != None:
+            atl08.df = atl08.df[abs(atl08.df['h_te_best_fit'] - altitude) <= alt_thresh]
+
+        if trim_atmospheric != 0:
+            atl08.df = atl08.df[(atl08.df['layer_flag'] == 0)|(atl08.df['msw_flag'] == 0)]
+
+        if sat_flag != 0:
+            atl08.df = atl08.df[atl08.df['sat_flag'] == 0]
+
+        if i % 2 == 0:
+            K = box_index_base
+        else:
+            K = weak_box_index_base
+
+        box_index = K
+        if i % 2 == 0:
+            LATS = []
+            LONS = []
+            lats = np.arange(min_lat + small_box_lat / 2,
+                 max_lat + small_box_lat / 2,
+                 small_box_lat)
+            if len(lats) <= 1:
+                lats = [(min_lat + max_lat)/2]
+        if i % 2 == 1:
+            lats, lons = LATS, LONS
+
+        for n, lat in enumerate(lats):
+            if i % 2 == 0:
+                polygon = make_box((coords[1],lat), width, small_box/2)
+                sub_min_lon, sub_min_lat, sub_max_lon, sub_max_lat = polygon.total_bounds
+                
+                atl03_temp = atl03.df[(atl03.df['lat_ph'] >= sub_min_lat) & (atl03.df['lat_ph'] <= sub_max_lat)].copy()
+                atl08_temp = atl08.df[(atl08.df['latitude'] >= sub_min_lat) & (atl08.df['latitude'] <= sub_max_lat)].copy()
+    
+                if len(atl08_temp) != 0:
+                    lon = atl08_temp.longitude.mean()
+                else:
+                    print(f'Beam {i + 1}, box {n} in {foldername} file {file_index} has no data.')
+                    continue
+
+            if i % 2 == 1:
+                lon = lons[n]
+
+            polygon = make_box((lon,lat), small_box/2,small_box/2)
+            sub_min_lon, sub_min_lat, sub_max_lon, sub_max_lat = polygon.total_bounds
+            atl03_temp = atl03.df[(atl03.df['lon_ph'] >= sub_min_lon) & (atl03.df['lon_ph'] <= sub_max_lon) &\
+                                    (atl03.df['lat_ph'] >= sub_min_lat) & (atl03.df['lat_ph'] <= sub_max_lat)].copy()
+            atl08_temp = atl08.df[(atl08.df['longitude'] >= sub_min_lon) & (atl08.df['longitude'] <= sub_max_lon) &\
+                                    (atl08.df['latitude'] >= sub_min_lat) & (atl08.df['latitude'] <= sub_max_lat)].copy()
+            if atl08_temp.shape[0] < threshold:
+                print(f'Beam {i + 1}, box {n} in {foldername} file {file_index} has insufficient data.')
+                if i % 2 == 1:
+                    box_index += 1
+                continue
+
+            X = atl08_temp.photon_rate_te
+            Y = atl08_temp.photon_rate_can_nr
+            if i + 1 == 3:
+                X /= 0.85
+                Y /= 0.85
+            layer_flag = atl08_temp.layer_flag
+            msw_flag = atl08_temp.msw_flag
+            cloud_flag_atm = atl08_temp.cloud_flag_atm
+            plotX[box_index].append(X)
+            plotY[box_index].append(Y)
+            if i % 2 == 0:
+                LATS.append(lat)
+                LONS.append(lon)
+            atl03s[box_index].append(atl03_temp)
+            colors[box_index].append(i)
+            Eg[box_index].append(X)
+            Ev[box_index].append(Y)
+            data_quantity[box_index].append([len(X) for x in range(len(X))])
+            for var in variable_names:
+                var_dict[var][box_index].append(atl08_temp[var])
+            if i % 2 == 0:
+                beam_str[box_index].append(['strong' for _ in range(len(atl08_temp['n_ca_photons']))])
+            else:
+                beam_str[box_index].append(['weak' for _ in range(len(atl08_temp['n_ca_photons']))])
+            beam[box_index].append([i+1 for _ in range(len(atl08_temp['n_ca_photons']))])
+
+            for x, y, lf, mf, cfa in zip(X,Y, layer_flag, msw_flag, cloud_flag_atm):
+                dataset[box_index].append([x, y, beam_names[i], lf, mf, cfa])
+            intercept, slope = starting_intercept(X,Y)
+            slope_init[box_index].append(min(max(slope, -100 + 1e-3), -1/100 - 1e-3)) #config
+            slope_weight[box_index].append(len(Y))
+            intercepts[box_index].append(min(intercept,16))
+            maxes[box_index].append(16)
+
+            box_index += 1
+
+        if i % 2 == 0:
+            ALL_LATS.extend(LATS)
+            ALL_LONS.extend(LONS)
+            box_index_base = box_index
+
+        if i % 2 == 1:
+            LATS = []
+            LONS = []
+            weak_box_index_base = box_index_base
+
+    rows = []
+
+    box_index = 0
+    for lat, lon in zip(ALL_LATS, ALL_LONS):
+        if len(dataset[box_index]) == 0:
+            box_index += 1
+            continue
+
+        slope_weight[box_index] /= np.sum([slope_weight[box_index]])
+        slope_init[box_index] = np.dot(slope_init[box_index], slope_weight[box_index])
+
+        df = pd.DataFrame(dataset[k], columns=['Eg', 'Ev', 'gt', 'layer_flag', 'msw_flag', 'cloud_flag_atm'])
+        df_encoded = pd.get_dummies(df, columns=['gt'], prefix='', prefix_sep='')
+        coefs, xy, full_xy = odr(df_encoded, intercepts = intercepts[k], maxes = maxes[k], init = slope_init[k],\
+                    lb=lb, ub=ub, model = model, res = res, loss=loss, f_scale=f_scale,
+                          outlier_removal=outlier_removal, w=w)
+
+        # Create the array of empty lists
+        xx = [[] for _ in range(6)]
+        yy = [[] for _ in range(6)]
+
+        beams_in_play = []
+        # Iterate over each beam column and append the Eg values belonging to that beam
+        for i in range(1, 7):  # Beam 1 to Beam 6
+            if f'Beam {i}' in xy.columns:
+                xx[i-1] = xy[xy[f'Beam {i}'] == True]['Eg']
+                yy[i-1] = xy[xy[f'Beam {i}'] == True]['Ev']
+                beams_in_play.append(i)
+
+        if len(colors) == 0:
+            graph_detail = 0
+
+        plot_parallel(coefs = coefs,
+                      colors = colors,
+                      title_date = title_date,
+                      X = plotX[box_index],
+                      Y = plotY[box_index],
+                      xx = xx,
+                      yy = yy,
+                      beam = beam_focus,
+                      file_index = file_index,
+                      graph_detail = graph_detail,
+                      atl03s = atl03[k],
+                      canopy_frac = None,
+                      terrain_frac = None,
+                      coords = (lat,lon))
+
+        indices_to_insert = [i for i in range(1,7) if i not in beams_in_play]
+        for index in indices_to_insert:
+            coefs = np.insert(coefs, index, None)
+        
+        if np.all(np.isnan([coefs[1],coefs[3],coefs[5]])):
+            y_strong = np.nan
+        else:
+            y_strong = np.nanmean([coefs[1],coefs[3],coefs[5]])
+            y_strong_max = np.nanmax([coefs[1],coefs[3],coefs[5]])
+            
+        if np.all(np.isnan([coefs[2],coefs[4],coefs[6]])):
+            y_weak = np.nan
+        else:
+            y_weak = np.nanmean([coefs[2],coefs[4],coefs[6]])
+            y_weak_max = np.nanmax([coefs[2],coefs[4],coefs[6]])
+            
+        if np.any(np.isnan([y_strong, y_weak])):
+            pv_ratio_mean = np.nan
+            pv_ratio_max = np.nan
+        else:
+            pv_ratio_mean = y_strong/y_weak
+            pv_ratio_max = y_strong_max/y_weak_max
+        
+        y_intercept_dict = {1: coefs[1], 2: coefs[2], 3: coefs[3], 4: coefs[4], 5: coefs[5], 6: coefs[6]}
+        x_intercept_dict = {1: -coefs[1]/coefs[0], 2: -coefs[2]/coefs[0], 3: -coefs[3]/coefs[0], 4: -coefs[4]/coefs[0],
+                           5: -coefs[5]/coefs[0], 6: -coefs[6]/coefs[0]}
+
+        for j in range(len(non_negative_subset(Eg[box_index]))):
+            row_data = [foldername, table_date, lon, lat, -coefs[0],
+                        y_intercept_dict[non_negative_subset(beam[box_index])[j]], x_intercept_dict[non_negative_subset(beam[box_index])[j]],
+                        non_negative_subset(Eg[box_index])[j], non_negative_subset(Ev[box_index])[j],
+                        non_negative_subset(data_quantity[box_index])[j], altitude, pv_ratio_mean, pv_ratio_max,
+                        non_negative_subset(trad_cc[box_index])[j], non_negative_subset(beam[box_index])[j],
+                        non_negative_subset(beam_str[box_index])[j]]
+            row_data.append(full_xy['Outlier'].iloc[j])
+
+            # Add the rest of the strong-weak pairs dynamically
+            for var in variable_names:  # Start from msw, as meanEg and meanEv are already included
+                # var = f"{var}"
+                row_data.append(non_negative_subset(var_dict[var][box_index])[j])
+            # Append the row to the rows list
+            rows.append(row_data)
+        box_index+=1
+
+    columns_list = ['camera', 'date', 'lon', 'lat', 'pvpg', 'pv', 'pg', 'Eg', 'Ev',
+                    'data_quantity', 'altitude', 'pv_ratio_mean', 'pv_ratio_max', 'trad_cc','beam', 'beam_str',
+                    'outlier']
+    for var in variable_names:  # Start from msw, as meanEg and meanEv are already included
+        columns_list.append(var)
+    BIG_DF = pd.DataFrame(rows,columns=[columns_list])
+    BIG_DF.columns = BIG_DF.columns.get_level_values(0)
+    return BIG_DF
