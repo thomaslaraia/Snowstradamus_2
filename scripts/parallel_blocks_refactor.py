@@ -7,7 +7,7 @@ from shapely.geometry import Point, box as shapely_box
 from scipy.optimize import least_squares, minimize
 import scipy.sparse.linalg
 from sklearn.metrics import r2_score, root_mean_squared_error, mean_absolute_error
-from scripts.odr import *
+from scripts.classes_fixed import *
 from scipy.stats import zscore, norm
 from sklearn.linear_model import LinearRegression
 from sklearn.covariance import EllipticEnvelope
@@ -27,12 +27,32 @@ import warnings
 warnings.filterwarnings("ignore", module="sklearn.neighbors._lof")
 warnings.filterwarnings("ignore", module="scipy.interpolate._interpolate")
 
-import yaml
-
-with open("../config.yaml", "r") as f:
-    cfg = yaml.safe_load(f)
+def non_negative_subset(asr_list):
+    cleaned_data = []
+    
+    for item in asr_list:
+        # Check if the item is a pandas Series (from your dataframe)
+        if isinstance(item, pd.Series):
+            # Append the non-negative values from the pandas Series
+            cleaned_data.extend(item.values)
+        # Check if it's a list with a single value [-1]
+        elif isinstance(item, list) and item == [-1]:
+            continue  # Skip the [-1] list, as it represents missing data
+        # If it's a regular list, append non-negative values
+        elif isinstance(item, list) and ('strong' in item or 'weak' in item):
+            cleaned_data.extend([x for x in item])
+        else:
+            cleaned_data.extend([x for x in item])
+        # elif isinstance(item, list):
+        #     cleaned_data.extend([x for x in item])
+    
+    return np.array(cleaned_data)  # Return as a numpy array
 
 def divide_arrays(X, Y, n=2):
+    '''
+    This function takes arrays X and Y and splits it into partitions of equal size in increasing magnitude in x
+    It returns the first and last partitions, used for estimating an initial guess for slope.
+    '''
     combined = list(zip(X, Y))
     combined.sort(key=lambda tup: tup[0])
     midpoint = len(combined) // n
@@ -56,6 +76,9 @@ def find_slope_and_intercept(x1, y1, x2, y2):
     return slope, intercept
 
 def starting_intercept(X,Y,n):
+    '''
+    This function computes a starting guess intercept and slope given a distribution of ICESat-2 Eg Ev data.
+    '''
     if len(Y) == 1:
         slope = -.3
         intercept = intercept_from_slope_and_point(slope, (list(X)[0],list(Y)[0]))
@@ -81,6 +104,9 @@ def starting_intercept(X,Y,n):
         return intercept, slope
 
 def parse_filename_datetime(filename):
+    '''
+    Retrieve the datetime from the ATL03/08 filename.
+    '''
     filename_only = filename.split('/')[-1]
     atl03_index = filename_only.find('ATL03_')
     atl08_index = filename_only.find('ATL08_')
@@ -101,6 +127,9 @@ def datetime_to_date(datetime_obj):
     return datetime_obj.strftime('%d/%m/%Y')
 
 def make_box(coords, width_km=25, height_km=25):
+    '''
+    Function to quickly make a GeoDataFrame polygon of given half-width and half-length
+    '''
     # Convert width and height from kilometers to degrees
     km_per_degree_lat = 111  # Kilometers per degree of latitude
     km_per_degree_lon = 111 * np.cos(np.radians(coords[1]))  # Kilometers per degree of longitude at given latitude
@@ -122,33 +151,161 @@ def make_box(coords, width_km=25, height_km=25):
     
     return polygon
 
-def non_negative_subset(asr_list):
-    cleaned_data = []
+# def non_negative_subset(asr_list):
+#     '''
+#     Function designed to remove [-1] from data, corresponding to empty beams
+#     '''
+#     cleaned_data = []
     
-    for item in asr_list:
-        if isinstance(item, pd.Series):
-            cleaned_data.extend(item.values)
-        elif isinstance(item, list) and item == [-1]:
+#     for item in asr_list:
+#         if isinstance(item, pd.Series):
+#             cleaned_data.extend(item.values)
+#         elif isinstance(item, list) and item == [-1]:
+#             continue
+#         else:
+#             cleaned_data.extend([x for x in item])
+    
+#     return np.array(cleaned_data)
+
+# def safe_mean(arr):
+#     if arr.size == 0:  # Check if the array is empty
+#         return np.nan
+#     else:
+#         return np.mean(arr)
+
+# def flatten_structure(structure):
+#     flat_list = []
+#     if isinstance(structure, (list, tuple, np.ndarray)):
+#         for item in structure:
+#             flat_list.extend(flatten_structure(item))
+#     else:
+#         flat_list.append(structure)
+#     return flat_list
+
+#This is a fairly standard linear model
+def model(params, x):
+    return params[0]*x + params[1]
+
+# This defines the residuals orthogonal to the regression line
+def residuals(params, x, y):
+    return (y - model(params, x))/np.sqrt(1 + params[0]**2)
+
+# This performs ODR regression for Y against X with initial guess init using least_squares()
+def odr(X,Y, init, res = residuals):
+    loss = cfg['parallel_blocks']['loss']
+    bounds = ([cfg['parallel_blocks']['slope_lb'],0], [cfg['parallel_blocks']['slope_ub'],16])
+    f_scale = cfg['parallel_blocks']['f_scale']
+    
+    result = least_squares(res, init, loss = loss, f_scale=f_scale, args=(X,Y), bounds = bounds)
+    
+    # a is the slope of the line, b is the intercept
+    a, b = result.x
+    return a, b
+
+def parallel_model(params, x):
+    common_slope, *parallel = params
+    # Get all columns starting with 'Beam'
+    beam_columns = [col for col in x.columns if col.startswith('Beam')]
+    return common_slope*x['Eg'] + np.dot(x[beam_columns], parallel)
+
+def parallel_residuals(params, x, y, cfg, model=parallel_model):
+    w=cfg['parallel_blocks']['w']
+    
+    common_slope = params[0]
+    model_output = model(params, x)
+    residuals = (y.T.values[0] - model_output) / np.sqrt(1 + common_slope**2)
+
+    beam_columns = [col for col in x.columns if col.startswith('Beam')]
+
+    weights = []
+    for i, col in enumerate(beam_columns):
+        beam_number = int(col.split('Beam')[-1])  # Extract beam number
+        weight = w[0] if beam_number % 2 != 0 else w[1]  # Weight: 1 if odd, 1/4 if even
+        weights.append(weight)
+    weighted_residuals = residuals.copy()*np.dot(x[beam_columns], weights)
+
+    prior_penalty = 0
+
+    residuals_and_penalty = np.append(weighted_residuals, prior_penalty)
+    return residuals_and_penalty
+
+def parallel_odr(dataset, intercepts, maxes, cfg, model = parallel_model, res = parallel_residuals):
+    """
+    Performs the parallel orthogonal distance regression on the given dataset.
+    
+    dataset - Pandas Dataframe with columns Eg, Ev, and Beam _ for each beam with data.
+    intercepts - Array holding the initial y_intercept guess for each beam. If e.g. only Beams 5 and 6 made it, then there are only two values in this array.
+    maxes - Array that holds the maximum y-intercept allowed when fitting for each beam.
+    cfg - config yaml holding parameters
+    model - Model to estimate Ev and Eg.
+    res - Residuals to put into least_squares function
+    """
+    init = cfg['parallel_blocks']['slope_init']
+    lb = cfg['parallel_blocks']['slope_lb']
+    ub = cfg['parallel_blocks']['slope_ub']
+    loss=cfg['parallel_blocks']['loss']
+    f_scale=cfg['parallel_blocks']['f_scale']
+    outlier_removal = cfg['parallel_blocks']['outlier_removal']
+    w=cfg['parallel_blocks']['w']
+    
+    cats = dataset.shape[1] - 5
+
+    a = [lb] + [0]*cats
+    b = [ub] + maxes
+    bounds = (a,b)
+    initial_params = [init] + intercepts
+
+    beam_columns = [col for col in dataset.columns if 'Beam' in col]
+    filtered_data = []
+    full_data = []
+    data_quantity = 0
+
+    for beam in beam_columns:
+        beam_data = dataset[dataset[beam] == True][['Eg', 'Ev', 'layer_flag', 'msw_flag', 'cloud_flag_atm'] + beam_columns].copy()
+
+        if outlier_removal == False:
+            beam_data['Outlier'] = 1
+            full_data.append(beam_data[['Eg', 'Ev', 'layer_flag', 'msw_flag', 'cloud_flag_atm', 'Outlier'] + beam_columns])
             continue
+
+        if len(beam_data) >= 2:
+            if outlier_removal < 1:
+                envelope = EllipticEnvelope(contamination=outlier_removal, random_state=42)
+                envelope.fit(beam_data[['Eg', 'Ev']])
+                beam_data['Outlier'] = envelope.predict(beam_data[['Eg', 'Ev']])
+                beam_filtered = beam_data[beam_data['Outlier'] == 1]
+            elif outlier_removal >= 2:
+                outlier_flags = np.zeros(len(beam_data), dtype=bool)
+                n = int(max(1,min(outlier_removal,len(beam_data)-3))) #config the 3
+                lof = LocalOutlierFactor(n_neighbors=n, contamination='auto')
+                preds = lof.fit_predict(beam_data[['Eg', 'Ev']])
+                outlier_flags = (preds == -1) # this used to be |=, this fix could create bug?
+                beam_data['Outlier'] = np.where(outlier_flags, -1, 1)
+                beam_filtered = beam_data[beam_data['Outlier'] == 1]
+            else:
+                beam_filtered = beam_data
         else:
-            cleaned_data.extend([x for x in item])
-    
-    return np.array(cleaned_data)
+            beam_filtered = beam_data
 
-def safe_mean(arr):
-    if arr.size == 0:  # Check if the array is empty
-        return np.nan
-    else:
-        return np.mean(arr)
+        filtered_data.append(beam_filtered[['Eg', 'Ev', 'layer_flag', 'msw_flag', 'cloud_flag_atm'] + beam_columns])
+        full_data.append(beam_data[['Eg', 'Ev', 'layer_flag', 'msw_flag', 'cloud_flag_atm', 'Outlier'] + beam_columns])
+        data_quantity = max(data_quantity, len(beam_data))
 
-def flatten_structure(structure):
-    flat_list = []
-    if isinstance(structure, (list, tuple, np.ndarray)):
-        for item in structure:
-            flat_list.extend(flatten_structure(item))
+    full_dataset = pd.concat(full_data).reset_index(drop=True)
+    if outlier_removal != False:
+        filtered_dataset = pd.concat(filtered_data).reset_index(drop=True)
+        dataset = filtered_dataset.copy()
+
+    X = dataset.drop(columns=['Ev', 'layer_flag', 'msw_flag', 'cloud_flag_atm'])
+    Y = dataset[['Ev']]
+
+    if loss == 'linear':
+        params = least_squares(parallel_residuals, x0=initial_params, args=(X, Y, cfg, model), loss = loss, bounds = bounds)
     else:
-        flat_list.append(structure)
-    return flat_list
+        params = least_squares(parallel_residuals, x0=initial_params, args=(X, Y, cfg, model), loss = loss, bounds = bounds,
+                               f_scale=f_scale, ftol=1e-15, xtol=1e-15, gtol=1e-15)
+
+    return params.x, dataset, full_dataset
 
 def plot(df, ax):
     """
@@ -215,9 +372,9 @@ def plot_parallel(
     title_date : str
         Datetime string for the ICESat-2 overpass.
     X, Y : list of arrays
-        Eg and Ev data for each successfully read beam.
+        Eg and Ev data for each successfully read beam, including outliers
     xx, yy : list-like
-        Additional plotted data by beam index.
+        Additional plotted data by beam index, not including outliers
     beam : list, optional
         List of beam numbers to show, e.g. [3, 4]. If None, all available beams are shown.
     file_index : int, optional
@@ -313,7 +470,7 @@ def plot_parallel(
                 linewidth=2 if graph_detail == 1 else 1.5
             )
 
-            ax_main..annotate(
+            ax_main.annotate(
             r'$\rho_v/\rho_g \approx {:.2f}$'.format(-coefs[0]),
             xy=(.14, .967) if graph_detail == 1 else (.35, .98),
             xycoords='axes fraction',
@@ -346,125 +503,15 @@ def plot_parallel(
     plt.show()
     return
 
-def parallel_model(params, x):
-    common_slope, *parallel = params
-    # Get all columns starting with 'Beam'
-    beam_columns = [col for col in x.columns if col.startswith('Beam')]
-    return common_slope*x['Eg'] + np.dot(x[beam_columns], parallel)
-
-def parallel_residuals(params, x, y, model=parallel_model, w=cfg['w'):
-    common_slope = params[0]
-    model_output = model(params, x)
-    residuals = (y.T.values[0] - model_output) / np.sqrt(1 + common_slope**2)
-
-    beam_columns = [col for col in x.columns if col.startswith('Beam')]
-
-    weights = []
-    for i, col in enumerate(beam_columns):
-        beam_number = int(col.split('Beam')[-1])  # Extract beam number
-        weight = w[0] if beam_number % 2 != 0 else w[1]  # Weight: 1 if odd, 1/4 if even
-        weights.append(weight)
-    weighted_residuals = residuals.copy()*np.dot(x[beam_columns], weights)
-
-    prior_penalty = 0
-
-    residuals_and_penalty = np.append(weighted_residuals, prior_penalty)
-    return residuals_and_penalty
-
-def parallel_odr(dataset, intercepts, maxes, init = cfg['slope_init'], lb = cfg['slope_lb'], ub = cfg['slope_ub'],
-                 model = parallel_model, res = parallel_residuals,
-                 loss=cfg['loss'], f_scale=cfg['f_scale'], outlier_removal = cfg['outlier_removal'], w=cfg['w']):
-    """
-    Performs the parallel orthogonal distance regression on the given dataset.
-    
-    dataset - Pandas Dataframe with columns Eg, Ev, and Beam _ for each beam with data.
-    maxes - Array that holds the initial y_intercept guess for each beam. If only Beams 5 and 6 made it, then there are only two values in this array.
-    init - Initial slope guess
-    lb - Lower bound constraint for slope
-    ub - Upper bound constraint for slope
-    model - Model to estimate Ev and Eg.
-    res - Residuals to put into least_squares function
-    loss - Loss function in regression
-    f_scale - f_scale parameter for least_squares, affects how much it cares about outliers.
-    """
-    cats = dataset.shape[1] - 5
-
-    a = [lb] + [0]*cats
-    b = [ub] + maxes
-    bounds = (a,b)
-    initial_params = [init] + intercepts
-
-    beam_columns = [col for col in dataset.columns if 'Beam' in col]
-    filtered_data = []
-    full_data = []
-    data_quantity = 0
-
-    for beam in beam_columns:
-        beam_data = dataset[dataset[beam] == True][['Eg', 'Ev', 'layer_flag', 'msw_flag', 'cloud_flag_atm'] + beam_columns].copy()
-
-        if outlier_removal = False:
-            beam_data['Outlier'] = 1
-            full_data.append(beam_data[['Eg', 'Ev', 'layer_flag', 'msw_flag', 'cloud_flag_atm', 'Outlier'] + beam_columns])
-            continue
-
-        if len(beam_data) >= 2:
-            if outlier_removal < 1:
-                envelope = EllipticEnvelope(contamination=outlier_removal, random_state=42)
-                envelope.fit(beam_data[['Eg', 'Ev']])
-                beam_data['Outlier'] = envelope.predict(beam_data[['Eg', 'Ev']])
-                beam_filtered = beam_data[beam_data['Outlier'] == 1]
-            elif outlier_removal >= 2:
-                outlier_flags = np.zeros(len(beam_data), dtype=bool)
-                n = int(max(1,min(outlier_removal,len(beam_data)-3))) #config the 3
-                lof = LocalOutlierFactor(n_neighbors=n, contamination='auto')
-                preds = lof.fit_predict(beam_data[['Eg', 'Ev']])
-                outlier_flags = (preds == -1) # this used to be |=, this fix could create bug?
-                beam_data['Outlier'] = np.where(outlier_flags, -1, 1)
-                beam_filtered = beam_data[beam_data['Outlier'] == 1]
-            else:
-                beam_filtered = beam_data
-        else:
-            beam_filtered = beam_data
-
-        filtered_data.append(beam_filtered[['Eg', 'Ev', 'layer_flag', 'msw_flag', 'cloud_flag_atm'] + beam_columns])
-        full_data.append(beam_data[['Eg', 'Ev', 'layer_flag', 'msw_flag', 'cloud_flag_atm', 'Outlier'] + beam_columns])
-        data_quantity = max(data_quantity, len(beam_data))
-
-    full_dataset = pd.concat(full_data).reset_index(drop=True)
-    if outlier_removal != False:
-        filtered_dataset = pd.concat(filtered_data).reset_index(drop=True)
-        dataset = filtered_dataset.copy()
-
-    X = dataset.drop(columns=['Ev', 'layer_flag', 'msw_flag', 'cloud_flag_atm'])
-    Y = dataset[['Ev']]
-
-    if loss == 'linear':
-        params = least_squares(parallel_residuals, x0=initial_params, args=(X, Y, model, False, w), loss = loss, bounds = bounds)
-    else:
-        params = least_squares(parallel_residuals, x0=initial_params, args=(X, Y, model, False, w), loss = loss, bounds = bounds,
-                               f_scale=f_scale, ftol=1e-15, xtol=1e-15, gtol=1e-15)
-
-    return params.x, dataset, full_dataset
-
-def pvpg_parallel(dirpath, atl03path, atl08path, coords, width=cfg['roi_half_width'], height=cfg['roi_half_height'],\
-                  f_scale = cfg['f_scale'], loss = cfg['loss'], init = cfg['slope_init'],\
-                  lb = cfg['slope_lb'], ub = cfg['slope_ub'], file_index = None, model = parallel_model, res = parallel_residuals,\
-                  odr = parallel_odr, beam_focus = None, y_init = np.max, graph_detail = 0,\
-                  altitude=None, alt_thresh=cfg['alt_thresh'], threshold = cfg['insufficient_data_threshold'],\
-                  small_box = cfg['small_box_side'], rebinned = 0, res_field='alongtrack',
-                  outlier_removal=False, landcover = 'forest', trim_atmospheric=0, w=[1.0,0.25], sat_flag = 0,
-                  show_me_the_good_ones = 0, DW=0):
-    # some of these up here need to be config
+def pvpg_parallel(dirpath, atl03path, atl08path, coords, cfg, file_index = None,
+                  model = parallel_model, res = parallel_residuals, odr = parallel_odr,
+                  beam_focus = None, y_init = np.max, graph_detail = 0):
     """
     Parallel regression of all tracks on a given overpass.
 
     atl03path - Path/to/ATL03/file
     atl08path - Path/to/matching/ATL08/file
-    f_scale - Parameter in least_squares() function when loss is nonlinear, indiciating the value of the soft margin between inlier and outlier residuals.
-    loss - string for loss parameter in least_squares().
-    init - initial slope guess for the parallel slope parameter
-    lb - Lower bound of allowed value for the slope of the regression, default -100
-    ub - Upper bound of allowed value for the slope of the regression, default -1/100
+    cfg - config yaml holding parameters
     file_index - Index of file if cycling through an array of filenames, displayed in figure titles for a given file. Allows us to easily pick out strange cases for investigation.
     model - model function to be used in least squares. Default is the parallel model function
     res - Default holds the ODR residuals function to be used in least_squares(). Can hold adjusted residual functions as well.
@@ -472,14 +519,57 @@ def pvpg_parallel(dirpath, atl03path, atl08path, coords, width=cfg['roi_half_wid
     beam - Default is None. Put in input in the form of an array of integers. For example, if you only want to display pv/pg on the plot for Beams 3 and 4, the input is [3,4]
     y_init - This is the function used to initialize the guess for the y intercept. Default is simply the maximum value, as this is expected to correspond with the data point closest to the y-intercept.
     graph_detail - Default is 0. If set to 1, will show a single pv/pg plot for all chosen, available beams. If set to 2, will also show each available groundtrack.
-    canopy_frac - Default is None. If changed, this will say in the title of the groundtrack what percentage of the data has canopy photon data. Low canopy fraction could indicate poor quality data. This is only displayed if Detail = 2.
     """
+    width=cfg['parallel_blocks']['roi_half_width']
+    height=cfg['parallel_blocks']['roi_half_height']
+    small_box = cfg['parallel_blocks']['small_box_half_side']
+    rebinned = cfg['parallel_blocks']['rebinned']
+    res_field=cfg['parallel_blocks']['res_field']
 
+    altitude = cfg['parallel_blocks']['altitude']
+    alt_thresh=cfg['parallel_blocks']['alt_thresh']
+    
+    threshold = cfg['parallel_blocks']['insufficient_data_threshold']
+    trim_atmospheric=cfg['parallel_blocks']['trim_atmospheric']
+    sat_flag = cfg['parallel_blocks']['sat_flag']
+    outlier_removal=cfg['parallel_blocks']['outlier_removal']
+    landcover = cfg['parallel_blocks']['landcover']
+    DW=cfg['parallel_blocks']['DW']
+    
+    f_scale = cfg['parallel_blocks']['f_scale']
+    loss = cfg['parallel_blocks']['loss']
+    init = cfg['parallel_blocks']['slope_init']
+    lb = cfg['parallel_blocks']['slope_lb']
+    ub = cfg['parallel_blocks']['slope_ub']
+    w = cfg['parallel_blocks']['w']
+
+    canopy_frac = cfg['parallel_blocks']['canopy_frac']
+    terrain_frac = cfg['parallel_blocks']['terrain_frac']
+    
     foldername = dirpath.split('/')[-2]
     
     mid_date = parse_filename_datetime(atl03path)
     title_date = datetime_to_title(mid_date)
     table_date = datetime_to_date(mid_date)
+
+    polygon = make_box(coords, width, height)
+    min_lon, min_lat, max_lon, max_lat = polygon.total_bounds
+
+    # Convert small_box from kilometers to degrees
+    km_per_degree_lat = 111  # Kilometers per degree of latitude
+    km_per_degree_lon = 111 * np.cos(np.radians(coords[1]))  # Kilometers per degree of longitude at the given latitude    
+
+    # Calculate the increment in degrees for the small box size
+    small_box_lat = small_box / km_per_degree_lat
+    small_box_lon = small_box / km_per_degree_lon
+
+    # Generate the latitude and longitude ranges using the converted small box sizes
+    lats = np.arange(min_lat + small_box_lat,
+                     max_lat + small_box_lat,
+                     small_box_lat*2)
+    lons = np.arange(min_lon + small_box_lon,
+                     max_lon + small_box_lon,
+                     small_box_lon*2)
 
     # This will hold all of the data in one place:
     # [[Eg, Ev, Beam 1],...[Eg,Ev,Beam 1],[Eg,Ev,Beam 2],...,[Eg,Ev,Beam6],[Eg,Ev,Beam 6]]
@@ -498,7 +588,7 @@ def pvpg_parallel(dirpath, atl03path, atl08path, coords, width=cfg['roi_half_wid
         'h_te_best_fit', 'h_te_std', 'terrain_slope', 'longitude', 'latitude',
         'cloud_flag_atm', 'layer_flag'
     ]
-    if DW != 0:
+    if DW != False:
         variable_names.append('DW') # config this
     var_dict = {}
     for var in variable_names:
@@ -535,25 +625,6 @@ def pvpg_parallel(dirpath, atl03path, atl08path, coords, width=cfg['roi_half_wid
 
     # The only purpose of this is to keep the data organised later.
     beam_names = [f"Beam {i}" for i in range(1,7)]
-
-    polygon = make_box(coords, width,height)
-    min_lon, min_lat, max_lon, max_lat = polygon.total_bounds
-
-    # Convert small_box from kilometers to degrees
-    km_per_degree_lat = 111  # Kilometers per degree of latitude
-    km_per_degree_lon = 111 * np.cos(np.radians(coords[1]))  # Kilometers per degree of longitude at the given latitude    
-
-    # Calculate the increment in degrees for the small box size
-    small_box_lat = small_box / km_per_degree_lat
-    small_box_lon = small_box / km_per_degree_lon
-
-    # Generate the latitude and longitude ranges using the converted small box sizes
-    lats = np.arange(min_lat + small_box_lat / 2,
-                     max_lat + small_box_lat / 2,
-                     small_box_lat)
-    lons = np.arange(min_lon + small_box_lon / 2,
-                     max_lon + small_box_lon / 2,
-                     small_box_lon)
 
     # through the loops this will track the lat/lon pairings for each strong beam
     LATS = []
@@ -593,6 +664,7 @@ def pvpg_parallel(dirpath, atl03path, atl08path, coords, width=cfg['roi_half_wid
                                 (atl03.df['lat_ph'] >= min_lat) & (atl03.df['lat_ph'] <= max_lat)]
         atl08.df = atl08.df[(atl08.df['longitude'] >= min_lon) & (atl08.df['longitude'] <= max_lon) &\
                                 (atl08.df['latitude'] >= min_lat) & (atl08.df['latitude'] <= max_lat)]
+
         if rebinned != 0:
             if atl08.df.shape[0] == 0:
                 print(f"Nothing to rebin for {foldername} file {file_index}'s beam {i+1}.")
@@ -603,7 +675,7 @@ def pvpg_parallel(dirpath, atl03path, atl08path, coords, width=cfg['roi_half_wid
 
         atl08.df = atl08.df[(atl08.df.photon_rate_can_nr < 16) & (atl08.df.photon_rate_te < 16)]# & (atl08.df.h_canopy < 100)]
 
-        if DW != 0:
+        if DW != False:
             filepath = find_dynamicworld_file(foldername)
             da = rioxarray.open_rasterio(filepath, masked=True).rio.reproject("EPSG:4326")
 
@@ -619,7 +691,7 @@ def pvpg_parallel(dirpath, atl03path, atl08path, coords, width=cfg['roi_half_wid
                 ).values
 
         if landcover == 'forest':
-            if DW != 0:
+            if DW != False:
                 # DynamicWorld: 1 = trees
                 atl08.df = atl08.df[atl08.df['DW'] == 1]
             else:
@@ -628,7 +700,7 @@ def pvpg_parallel(dirpath, atl03path, atl08path, coords, width=cfg['roi_half_wid
                     [111,112,113,114,115,116,121,122,123,124,125,126]
                 )]
         elif landcover == 'all':
-            if DW != 0:
+            if DW != False:
                 # Keep everything except obvious non-land / no-data (here: DW == 0)
                 atl08.df = atl08.df[~atl08.df['DW'].isin([0])]
             else:
@@ -639,10 +711,10 @@ def pvpg_parallel(dirpath, atl03path, atl08path, coords, width=cfg['roi_half_wid
         if altitude != None:
             atl08.df = atl08.df[abs(atl08.df['h_te_best_fit'] - altitude) <= alt_thresh]
 
-        if trim_atmospheric != 0:
+        if trim_atmospheric != False:
             atl08.df = atl08.df[(atl08.df['layer_flag'] == 0)|(atl08.df['msw_flag'] == 0)]
 
-        if sat_flag != 0:
+        if sat_flag != False:
             atl08.df = atl08.df[atl08.df['sat_flag'] == 0]
 
         if i % 2 == 0:
@@ -654,9 +726,9 @@ def pvpg_parallel(dirpath, atl03path, atl08path, coords, width=cfg['roi_half_wid
         if i % 2 == 0:
             LATS = []
             LONS = []
-            lats = np.arange(min_lat + small_box_lat / 2,
-                 max_lat + small_box_lat / 2,
-                 small_box_lat)
+            lats = np.arange(min_lat + small_box_lat,
+                 max_lat + small_box_lat,
+                 small_box_lat*2)
             if len(lats) <= 1:
                 lats = [(min_lat + max_lat)/2]
         if i % 2 == 1:
@@ -664,7 +736,7 @@ def pvpg_parallel(dirpath, atl03path, atl08path, coords, width=cfg['roi_half_wid
 
         for n, lat in enumerate(lats):
             if i % 2 == 0:
-                polygon = make_box((coords[1],lat), width, small_box/2)
+                polygon = make_box((coords[1],lat), width, small_box)
                 sub_min_lon, sub_min_lat, sub_max_lon, sub_max_lat = polygon.total_bounds
                 
                 atl03_temp = atl03.df[(atl03.df['lat_ph'] >= sub_min_lat) & (atl03.df['lat_ph'] <= sub_max_lat)].copy()
@@ -679,7 +751,7 @@ def pvpg_parallel(dirpath, atl03path, atl08path, coords, width=cfg['roi_half_wid
             if i % 2 == 1:
                 lon = lons[n]
 
-            polygon = make_box((lon,lat), small_box/2,small_box/2)
+            polygon = make_box((lon,lat), small_box,small_box)
             sub_min_lon, sub_min_lat, sub_max_lon, sub_max_lat = polygon.total_bounds
             atl03_temp = atl03.df[(atl03.df['lon_ph'] >= sub_min_lon) & (atl03.df['lon_ph'] <= sub_max_lon) &\
                                     (atl03.df['lat_ph'] >= sub_min_lat) & (atl03.df['lat_ph'] <= sub_max_lat)].copy()
@@ -719,7 +791,7 @@ def pvpg_parallel(dirpath, atl03path, atl08path, coords, width=cfg['roi_half_wid
 
             for x, y, lf, mf, cfa in zip(X,Y, layer_flag, msw_flag, cloud_flag_atm):
                 dataset[box_index].append([x, y, beam_names[i], lf, mf, cfa])
-            intercept, slope = starting_intercept(X,Y)
+            intercept, slope = starting_intercept(X,Y,cfg['parallel_blocks']['divide_array'])
             slope_init[box_index].append(min(max(slope, -100 + 1e-3), -1/100 - 1e-3)) #config
             slope_weight[box_index].append(len(Y))
             intercepts[box_index].append(min(intercept,16))
@@ -748,11 +820,9 @@ def pvpg_parallel(dirpath, atl03path, atl08path, coords, width=cfg['roi_half_wid
         slope_weight[box_index] /= np.sum([slope_weight[box_index]])
         slope_init[box_index] = np.dot(slope_init[box_index], slope_weight[box_index])
 
-        df = pd.DataFrame(dataset[k], columns=['Eg', 'Ev', 'gt', 'layer_flag', 'msw_flag', 'cloud_flag_atm'])
+        df = pd.DataFrame(dataset[box_index], columns=['Eg', 'Ev', 'gt', 'layer_flag', 'msw_flag', 'cloud_flag_atm'])
         df_encoded = pd.get_dummies(df, columns=['gt'], prefix='', prefix_sep='')
-        coefs, xy, full_xy = odr(df_encoded, intercepts = intercepts[k], maxes = maxes[k], init = slope_init[k],\
-                    lb=lb, ub=ub, model = model, res = res, loss=loss, f_scale=f_scale,
-                          outlier_removal=outlier_removal, w=w)
+        coefs, xy, full_xy = odr(df_encoded, intercepts = intercepts[box_index], maxes = maxes[box_index], cfg=cfg, model = model, res = res)
 
         # Create the array of empty lists
         xx = [[] for _ in range(6)]
@@ -770,7 +840,7 @@ def pvpg_parallel(dirpath, atl03path, atl08path, coords, width=cfg['roi_half_wid
             graph_detail = 0
 
         plot_parallel(coefs = coefs,
-                      colors = colors,
+                      colors = colors[box_index],
                       title_date = title_date,
                       X = plotX[box_index],
                       Y = plotY[box_index],
@@ -779,7 +849,7 @@ def pvpg_parallel(dirpath, atl03path, atl08path, coords, width=cfg['roi_half_wid
                       beam = beam_focus,
                       file_index = file_index,
                       graph_detail = graph_detail,
-                      atl03s = atl03[k],
+                      atl03s = atl03s[box_index],
                       canopy_frac = None,
                       terrain_frac = None,
                       coords = (lat,lon))
@@ -811,28 +881,26 @@ def pvpg_parallel(dirpath, atl03path, atl08path, coords, width=cfg['roi_half_wid
         x_intercept_dict = {1: -coefs[1]/coefs[0], 2: -coefs[2]/coefs[0], 3: -coefs[3]/coefs[0], 4: -coefs[4]/coefs[0],
                            5: -coefs[5]/coefs[0], 6: -coefs[6]/coefs[0]}
 
-        for j in range(len(non_negative_subset(Eg[box_index]))):
+        for j in range(len(Eg[box_index])):
             row_data = [foldername, table_date, lon, lat, -coefs[0],
-                        y_intercept_dict[non_negative_subset(beam[box_index])[j]], x_intercept_dict[non_negative_subset(beam[box_index])[j]],
-                        non_negative_subset(Eg[box_index])[j], non_negative_subset(Ev[box_index])[j],
-                        non_negative_subset(data_quantity[box_index])[j], altitude, pv_ratio_mean, pv_ratio_max,
-                        non_negative_subset(trad_cc[box_index])[j], non_negative_subset(beam[box_index])[j],
-                        non_negative_subset(beam_str[box_index])[j]]
+                        [y_intercept_dict[x] for x in beam[box_index][j]], [x_intercept_dict[x] for x in beam[box_index][j]],
+                        list(Eg[box_index][j]), list(Ev[box_index][j]),
+                        data_quantity[box_index][j], altitude, pv_ratio_mean, pv_ratio_max,
+                        beam[box_index][j], beam_str[box_index][j]]
             row_data.append(full_xy['Outlier'].iloc[j])
 
             # Add the rest of the strong-weak pairs dynamically
             for var in variable_names:  # Start from msw, as meanEg and meanEv are already included
-                # var = f"{var}"
-                row_data.append(non_negative_subset(var_dict[var][box_index])[j])
-            # Append the row to the rows list
+                # row_data.append(non_negative_subset(var_dict[var][box_index])[j])
+                row_data.append(list(var_dict[var][box_index][j]))
             rows.append(row_data)
         box_index+=1
 
     columns_list = ['camera', 'date', 'lon', 'lat', 'pvpg', 'pv', 'pg', 'Eg', 'Ev',
-                    'data_quantity', 'altitude', 'pv_ratio_mean', 'pv_ratio_max', 'trad_cc','beam', 'beam_str',
+                    'data_quantity', 'altitude', 'pv_ratio_mean', 'pv_ratio_max','beam', 'beam_str',
                     'outlier']
     for var in variable_names:  # Start from msw, as meanEg and meanEv are already included
         columns_list.append(var)
     BIG_DF = pd.DataFrame(rows,columns=[columns_list])
     BIG_DF.columns = BIG_DF.columns.get_level_values(0)
-    return BIG_DF
+    return BIG_DF.explode([c for c in BIG_DF.columns if isinstance(BIG_DF[c].iloc[0], list)], ignore_index=True)

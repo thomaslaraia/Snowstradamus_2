@@ -3,14 +3,14 @@ import xarray as xr
 import rioxarray
 from pathlib import Path
 
-def find_dynamicworld_file(name, dw_dir='../scratch/data/DW'):
+def find_dynamicworld_file(name, dw_dir='../../scratch/data/DW'):
     dw_dir = Path(dw_dir)
     matches = list(dw_dir.glob(f'*{name}*.tif'))
     if not matches:
         raise FileNotFoundError(f"No DynamicWorld file found for name: {name}")
     return matches[0]
 
-def assign_dw_labels(df, dw_dir='../scratch/data/DW'):
+def assign_dw_labels(df, dw_dir='../../scratch/data/DW'):
     unique_names = df['camera'].unique()
     df['DW'] = pd.NA  # Placeholder column
 

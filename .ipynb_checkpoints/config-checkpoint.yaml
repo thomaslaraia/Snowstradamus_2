@@ -1,18 +1,35 @@
 parallel_blocks:
-  w: [1.0, 0.25]
+  w: [1.0, 0.25] # weights in the fit for strong beam vs weak beam
 
-  slope_init: -1
-  slope_lb: -100
-  slope_ub: -0.01
+  slope_init: -1 # initial slope guess for parallel orthogonal least squares (POLS)
+  slope_lb: -100 # steepest slope allowed
+  slope_ub: -0.01 # shallowest slope allowed
 
-  loss: linear
-  f_scale: 0.1
+  divide_array: 2 # how many partitions to split the data into along x-axis to get starting slope guess
 
-  outlier_removal: False
+  loss: 'linear' # loss type of least squares, e.g. linear, arctan...
+  f_scale: 0.1 # f_scale, matters for non-linear loss
 
-  roi_half_width: 4
-  roi_half_height: 4
-  small_box_side: 1
+  outlier_removal: False # if n less than 1, uses elliptic envelope with this value for contamination
+                          # if n greater than or equal to 2, uses LocalOutlierFactor with n_neighbours rounded n
 
-  alt_thresh:
-  insufficient_data_threshold: 1
+  roi_half_width: 4 # half-width of roi in km
+  roi_half_height: 4 # half-height of roi in km
+  small_box_half_side: 4 # half-width/half-height of boxes that follow each groundtrack
+
+  altitude:
+  alt_thresh: # ATL08 segments that are more than alt_thresh away from the entered elevation are filtered out
+  
+  insufficient_data_threshold: 1 # beam must have at least this many segments in a given small box for it not to be skipped
+  landcover: 'forest' # forest: filters just to forest segments - all: filters out water, no-data, obvious non-land
+                                                                        # otherwise, nothing filtered out
+  trim_atmospheric: False # if true, this will only keep segments where at least one of the layer_flag and the msw_flag are 0
+  sat_flag: False # if true, filter out data where the sat_flag is raised, which typically happens over water that hasn't been caught by the
+                                                                                                                      # landcover mask
+  DW: False # if true, uses DynamicWorld landcover from Landsat imagery used instead of Copernicus 2019 Global
+  
+  rebinned: 0 # 0 for no rebinning (100m). N rebins the data into N meter segments
+  res_field: 'alongtrack' # the field that is used to rebin, i.e. alongtrack here makes sure we are doing N meters.
+
+  canopy_frac: # if not None, plot titles will tell you what fraction of segments have any canopy photons
+  terrain_frac: # if not None, plot titles will tell you what fraction of segments have any terrain photos
