@@ -1,5 +1,4 @@
 from scripts.imports import *
-from scripts.show_tracks import *
 from scripts.track_pairs import *
 from scripts.DW import *
 import geopandas as gpd
@@ -7,7 +6,6 @@ from shapely.geometry import Point, box as shapely_box
 from scipy.optimize import least_squares, minimize
 import scipy.sparse.linalg
 from sklearn.metrics import r2_score, root_mean_squared_error, mean_absolute_error
-from scripts.classes_fixed import *
 from scipy.stats import zscore, norm
 from sklearn.linear_model import LinearRegression
 from sklearn.covariance import EllipticEnvelope
@@ -503,7 +501,7 @@ def plot_parallel(
     plt.show()
     return
 
-def pvpg_parallel(dirpath, atl03path, atl08path, coords, cfg, file_index = None,
+def pvpg_parallel(dirpath, atl03path, atl08path, cfg, coords = None, file_index = None,
                   model = parallel_model, res = parallel_residuals, odr = parallel_odr,
                   beam_focus = None, y_init = np.max, graph_detail = 0):
     """

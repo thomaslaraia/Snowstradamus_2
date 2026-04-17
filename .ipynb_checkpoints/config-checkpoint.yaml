@@ -15,7 +15,7 @@ parallel_blocks:
 
   roi_half_width: 4 # half-width of roi in km
   roi_half_height: 4 # half-height of roi in km
-  small_box_half_side: 4 # half-width/half-height of boxes that follow each groundtrack
+  small_box_half_side: 0.5 # half-width/half-height of boxes that follow each groundtrack
 
   altitude:
   alt_thresh: # ATL08 segments that are more than alt_thresh away from the entered elevation are filtered out
