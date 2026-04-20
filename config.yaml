@@ -13,9 +13,13 @@ parallel_blocks:
   outlier_removal: False # if n less than 1, uses elliptic envelope with this value for contamination
                           # if n greater than or equal to 2, uses LocalOutlierFactor with n_neighbours rounded n
 
-  roi_half_width: 4 # half-width of roi in km
-  roi_half_height: 4 # half-height of roi in km
-  small_box_half_side: 0.5 # half-width/half-height of boxes that follow each groundtrack
+  roi_half_width: # half-width of roi in km
+  roi_half_height: # half-height of roi in km
+  small_box_half_side: # half-width/half-height of boxes that follow each groundtrack; HAS TO BE <= 2 OR >= 4
+                                                  # design choice because beams are 3.3km apart, so
+                                                  # <= 2 guarantees boxes only have one beam pair while 
+                                                  # >= 4 makes sure every beam is included.
+                                                  # The middle case is too awkward and I don't need it.
 
   altitude:
   alt_thresh: # ATL08 segments that are more than alt_thresh away from the entered elevation are filtered out
