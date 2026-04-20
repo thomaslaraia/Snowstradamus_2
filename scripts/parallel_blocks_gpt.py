@@ -261,12 +261,12 @@ def parallel_odr(dataset, intercepts, maxes, cfg, model = parallel_model, res = 
     for beam in beam_columns:
         beam_data = dataset[dataset[beam] == True][['Eg', 'Ev', 'layer_flag', 'msw_flag', 'cloud_flag_atm'] + beam_columns].copy()
 
-        if outlier_removal == False:
+        if outlier_removal == None:
             beam_data['Outlier'] = 1
             full_data.append(beam_data[['Eg', 'Ev', 'layer_flag', 'msw_flag', 'cloud_flag_atm', 'Outlier'] + beam_columns])
             continue
 
-        if len(beam_data) >= 2:
+        elif len(beam_data) >= 2:
             if outlier_removal < 1:
                 envelope = EllipticEnvelope(contamination=outlier_removal, random_state=42)
                 envelope.fit(beam_data[['Eg', 'Ev']])
@@ -290,7 +290,7 @@ def parallel_odr(dataset, intercepts, maxes, cfg, model = parallel_model, res = 
         data_quantity = max(data_quantity, len(beam_data))
 
     full_dataset = pd.concat(full_data).reset_index(drop=True)
-    if outlier_removal != False:
+    if outlier_removal != None:
         filtered_dataset = pd.concat(filtered_data).reset_index(drop=True)
         dataset = filtered_dataset.copy()
 
@@ -624,10 +624,12 @@ def pvpg_parallel(dirpath, atl03path, atl08path, cfg, coords = None, file_index 
 
     if (width is None) != (height is None):
         raise ValueError("roi_half_width and roi_half_height must either both be numbers or both be None.")
+    if (coords is None) and (width is not None or height is not None):
+        raise ValueError("Cannot set roi_half_width and roi_half_height as numbers while coords = None")
     if small_box is not None and 2 < small_box < 4:
         raise ValueError("small_box_half_side values between 2 and 4 are not acceptable.")
 
-    has_roi = (width is not None and height is not None)
+    has_roi = (coords is not None and width is not None and height is not None)
     has_small_boxes = (small_box is not None)
     shared_all_beams = (small_box is None) or (small_box >= 4 if small_box is not None else False)
 
@@ -691,6 +693,10 @@ def pvpg_parallel(dirpath, atl03path, atl08path, cfg, coords = None, file_index 
             roi_bounds = make_box(initial_center, width, height).total_bounds
             atl03.df = _filter_to_bounds(atl03.df, 'lon_ph', 'lat_ph', roi_bounds)
             atl08.df = _filter_to_bounds(atl08.df, 'longitude', 'latitude', roi_bounds)
+
+        print(f"msw flag: {atl08.df.msw_flag.mean()}")
+        print(f"layer flag: {atl08.df.layer_flag.mean()}")
+        print(f"sat flag: {atl08.df.sat_flag.mean()}")
 
         if rebinned != 0:
             if atl08.df.shape[0] == 0:

@@ -10,7 +10,7 @@ parallel_blocks:
   loss: 'linear' # loss type of least squares, e.g. linear, arctan...
   f_scale: 0.1 # f_scale, matters for non-linear loss
 
-  outlier_removal: False # if n less than 1, uses elliptic envelope with this value for contamination
+  outlier_removal: # if n less than 1, uses elliptic envelope with this value for contamination
                           # if n greater than or equal to 2, uses LocalOutlierFactor with n_neighbours rounded n
 
   roi_half_width: # half-width of roi in km
@@ -24,11 +24,11 @@ parallel_blocks:
   altitude:
   alt_thresh: # ATL08 segments that are more than alt_thresh away from the entered elevation are filtered out
   
-  insufficient_data_threshold: 1 # beam must have at least this many segments in a given small box for it not to be skipped
+  insufficient_data_threshold: 5 # beam must have at least this many segments in a given small box for it not to be skipped
   landcover: 'forest' # forest: filters just to forest segments - all: filters out water, no-data, obvious non-land
                                                                         # otherwise, nothing filtered out
-  trim_atmospheric: False # if true, this will only keep segments where at least one of the layer_flag and the msw_flag are 0
-  sat_flag: False # if true, filter out data where the sat_flag is raised, which typically happens over water that hasn't been caught by the
+  trim_atmospheric: True # if true, this will only keep segments where at least one of the layer_flag and the msw_flag are 0
+  sat_flag: True # if true, filter out data where the sat_flag is raised, which typically happens over water that hasn't been caught by the
                                                                                                                       # landcover mask
   DW: False # if true, uses DynamicWorld landcover from Landsat imagery used instead of Copernicus 2019 Global
   
