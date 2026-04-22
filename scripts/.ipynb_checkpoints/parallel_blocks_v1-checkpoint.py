@@ -266,7 +266,7 @@ def parallel_odr(dataset, intercepts, maxes, cfg, model = parallel_model, res = 
             full_data.append(beam_data[['Eg', 'Ev', 'layer_flag', 'msw_flag', 'cloud_flag_atm', 'Outlier'] + beam_columns])
             continue
 
-        if len(beam_data) >= 2:
+        elif len(beam_data) >= 2:
             if outlier_removal < 1:
                 envelope = EllipticEnvelope(contamination=outlier_removal, random_state=42)
                 envelope.fit(beam_data[['Eg', 'Ev']])
