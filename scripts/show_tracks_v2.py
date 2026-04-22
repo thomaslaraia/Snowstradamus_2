@@ -10,8 +10,8 @@ from cartopy.mpl.ticker import LongitudeFormatter, LatitudeFormatter
 
 import sys
 
-# sys.path.insert(1,'/home/s1803229/src/PhoREAL')
-sys.path.insert(1,'C:/Users/s1803229/Documents/PhoREAL')
+sys.path.insert(1,'/../../src/PhoREAL')
+# sys.path.insert(1,'C:/Users/s1803229/Documents/PhoREAL')
 
 from phoreal.reader import get_atl03_struct, get_atl08_struct
 from phoreal.binner import rebin_atl08
