@@ -15,8 +15,8 @@ import random
 import sys
 import gc
 
-# sys.path.insert(1,'/home/s1803229/src/PhoREAL')
-sys.path.insert(1,'C:/Users/s1803229/Documents/PhoREAL')
+sys.path.insert(1,'/home/s1803229/src/PhoREAL')
+# sys.path.insert(1,'C:/Users/s1803229/Documents/PhoREAL')
 
 from phoreal.reader import get_atl03_struct, get_atl08_struct
 from phoreal.binner import rebin_atl08
@@ -99,7 +99,7 @@ def starting_intercept(X,Y,n):
                 slope = -100
             intercept = intercept_from_slope_and_point(slope, (np.mean([x1,x2]),np.mean([y1,y2])))
 
-    return intercept, slope
+        return intercept, slope
 
 def parse_filename_datetime(filename):
     '''
@@ -261,7 +261,7 @@ def parallel_odr(dataset, intercepts, maxes, cfg, model = parallel_model, res = 
     for beam in beam_columns:
         beam_data = dataset[dataset[beam] == True][['Eg', 'Ev', 'layer_flag', 'msw_flag', 'cloud_flag_atm'] + beam_columns].copy()
 
-        if outlier_removal == None:
+        if outlier_removal == False:
             beam_data['Outlier'] = 1
             full_data.append(beam_data[['Eg', 'Ev', 'layer_flag', 'msw_flag', 'cloud_flag_atm', 'Outlier'] + beam_columns])
             continue
@@ -290,7 +290,7 @@ def parallel_odr(dataset, intercepts, maxes, cfg, model = parallel_model, res = 
         data_quantity = max(data_quantity, len(beam_data))
 
     full_dataset = pd.concat(full_data).reset_index(drop=True)
-    if outlier_removal != None:
+    if outlier_removal != False:
         filtered_dataset = pd.concat(filtered_data).reset_index(drop=True)
         dataset = filtered_dataset.copy()
 
@@ -418,7 +418,7 @@ def plot_parallel(
         return
 
     # Title
-    if file_index:
+    if file_index is not None:
         fig.suptitle(
             title_date + ' - N = ' + str(file_index),
             fontsize=16 if graph_detail == 2 else 18,
@@ -438,9 +438,9 @@ def plot_parallel(
                 axes[c].set_title(
                     f"{beam_names[c]} - TF = {round(terrain_frac[c], 2)}, CF = {round(canopy_frac[c], 2)}"
                 )
-            elif canopy_frac:
+            elif canopy_frac is not None:
                 axes[c].set_title(f"{beam_names[c]} - CF = {round(canopy_frac[c], 2)}")
-            elif terrain_frac:
+            elif terrain_frac is not None:
                 axes[c].set_title(f"{beam_names[c]} - TF = {round(terrain_frac[c], 2)}")
             else:
                 axes[c].set_title(f"{beam_names[c]}")
@@ -501,91 +501,6 @@ def plot_parallel(
     plt.show()
     return
 
-def _new_box(variable_names):
-    return {
-        'Eg': [],
-        'Ev': [],
-        'beam_str': [],
-        'beam': [],
-        'data_quantity': [],
-        'dataset': [],
-        'plotX': [],
-        'plotY': [],
-        'atl03s': [],
-        'colors': [],
-        'slope_init': [],
-        'slope_weight': [],
-        'intercepts': [],
-        'maxes': [],
-        'var_dict': {var: [] for var in variable_names},
-    }
-
-def _midpoint_from_frames(atl08_df, atl03_df):
-    if atl08_df is not None and len(atl08_df) > 0:
-        lon_min, lon_max = atl08_df['longitude'].min(), atl08_df['longitude'].max()
-        lat_min, lat_max = atl08_df['latitude'].min(), atl08_df['latitude'].max()
-    elif atl03_df is not None and len(atl03_df) > 0:
-        lon_min, lon_max = atl03_df['lon_ph'].min(), atl03_df['lon_ph'].max()
-        lat_min, lat_max = atl03_df['lat_ph'].min(), atl03_df['lat_ph'].max()
-    else:
-        return None
-    return ((lon_min + lon_max) / 2, (lat_min + lat_max) / 2)
-
-def _filter_to_bounds(df, lon_col, lat_col, bounds):
-    if bounds is None:
-        return df
-    min_lon, min_lat, max_lon, max_lat = bounds
-    return df[
-        (df[lon_col] >= min_lon) & (df[lon_col] <= max_lon) &
-        (df[lat_col] >= min_lat) & (df[lat_col] <= max_lat)
-    ].copy()
-
-def _compute_small_box_centers(atl08_df, atl03_df, small_box, lat_bounds=None):
-    if atl08_df is not None and len(atl08_df) > 0:
-        lat_series = atl08_df['latitude']
-        lon_series = atl08_df['longitude']
-        lon_col = 'longitude'
-        lat_col = 'latitude'
-        source_df = atl08_df
-    elif atl03_df is not None and len(atl03_df) > 0:
-        lat_series = atl03_df['lat_ph']
-        lon_series = atl03_df['lon_ph']
-        lon_col = 'lon_ph'
-        lat_col = 'lat_ph'
-        source_df = atl03_df
-    else:
-        return []
-
-    if lat_bounds is None:
-        lat_min, lat_max = lat_series.min(), lat_series.max()
-    else:
-        lat_min, lat_max = lat_bounds
-
-    if pd.isna(lat_min) or pd.isna(lat_max):
-        return []
-
-    small_box_lat = small_box / 111.0
-    lats = np.arange(lat_min + small_box_lat, lat_max + small_box_lat, small_box_lat * 2)
-    if len(lats) <= 1:
-        lats = np.array([(lat_min + lat_max) / 2])
-
-    centers = []
-    for lat in lats:
-        lat_mask = (source_df[lat_col] >= lat - small_box_lat) & (source_df[lat_col] <= lat + small_box_lat)
-        temp = source_df.loc[lat_mask]
-        if len(temp) == 0:
-            continue
-        lon = temp[lon_col].mean()
-        centers.append((lat, lon))
-    return centers
-
-def _reference_beam_index(available_indices):
-    # Prefer Beam 3, then Beam 1, then Beam 5, then anything available.
-    for idx in [2, 0, 4]:
-        if idx in available_indices:
-            return idx
-    return available_indices[0] if available_indices else None
-
 def pvpg_parallel(dirpath, atl03path, atl08path, cfg, coords = None, file_index = None,
                   model = parallel_model, res = parallel_residuals, odr = parallel_odr,
                   beam_focus = None, y_init = np.max, graph_detail = 0):
@@ -603,56 +518,99 @@ def pvpg_parallel(dirpath, atl03path, atl08path, cfg, coords = None, file_index 
     y_init - This is the function used to initialize the guess for the y intercept. Default is simply the maximum value, as this is expected to correspond with the data point closest to the y-intercept.
     graph_detail - Default is 0. If set to 1, will show a single pv/pg plot for all chosen, available beams. If set to 2, will also show each available groundtrack.
     """
-    width = cfg['parallel_blocks']['roi_half_width']
-    height = cfg['parallel_blocks']['roi_half_height']
+    width=cfg['parallel_blocks']['roi_half_width']
+    height=cfg['parallel_blocks']['roi_half_height']
     small_box = cfg['parallel_blocks']['small_box_half_side']
     rebinned = cfg['parallel_blocks']['rebinned']
-    res_field = cfg['parallel_blocks']['res_field']
+    res_field=cfg['parallel_blocks']['res_field']
 
     altitude = cfg['parallel_blocks']['altitude']
-    alt_thresh = cfg['parallel_blocks']['alt_thresh']
-
+    alt_thresh=cfg['parallel_blocks']['alt_thresh']
+    
     threshold = cfg['parallel_blocks']['insufficient_data_threshold']
-    trim_atmospheric = cfg['parallel_blocks']['trim_atmospheric']
+    trim_atmospheric=cfg['parallel_blocks']['trim_atmospheric']
     sat_flag = cfg['parallel_blocks']['sat_flag']
-    outlier_removal = cfg['parallel_blocks']['outlier_removal']
+    outlier_removal=cfg['parallel_blocks']['outlier_removal']
     landcover = cfg['parallel_blocks']['landcover']
-    DW = cfg['parallel_blocks']['DW']
+    DW=cfg['parallel_blocks']['DW']
+    
+    f_scale = cfg['parallel_blocks']['f_scale']
+    loss = cfg['parallel_blocks']['loss']
+    init = cfg['parallel_blocks']['slope_init']
+    lb = cfg['parallel_blocks']['slope_lb']
+    ub = cfg['parallel_blocks']['slope_ub']
+    w = cfg['parallel_blocks']['w']
 
     canopy_frac = cfg['parallel_blocks']['canopy_frac']
     terrain_frac = cfg['parallel_blocks']['terrain_frac']
-
-    if (width is None) != (height is None):
-        raise ValueError("roi_half_width and roi_half_height must either both be numbers or both be None.")
-    if (coords is None) and (width is not None or height is not None):
-        raise ValueError("Cannot set roi_half_width and roi_half_height as numbers while coords = None")
-    if small_box is not None and 2 < small_box < 4:
-        raise ValueError("small_box_half_side values between 2 and 4 are not acceptable.")
-
-    has_roi = (coords is not None and width is not None and height is not None)
-    has_small_boxes = (small_box is not None)
-    shared_all_beams = (small_box is None) or (small_box >= 4 if small_box else False)
-
+    
     foldername = dirpath.split('/')[-2]
-
+    
     mid_date = parse_filename_datetime(atl03path)
     title_date = datetime_to_title(mid_date)
     table_date = datetime_to_date(mid_date)
 
+    polygon = make_box(coords, width, height)
+    min_lon, min_lat, max_lon, max_lat = polygon.total_bounds
+
+    # Convert small_box from kilometers to degrees
+    km_per_degree_lat = 111  # Kilometers per degree of latitude
+    km_per_degree_lon = 111 * np.cos(np.radians(coords[1]))  # Kilometers per degree of longitude at the given latitude    
+
+    # Calculate the increment in degrees for the small box size
+    small_box_lat = small_box / km_per_degree_lat
+    small_box_lon = small_box / km_per_degree_lon
+
+    # Generate the latitude and longitude ranges using the converted small box sizes
+    lats = np.arange(min_lat + small_box_lat,
+                     max_lat + small_box_lat,
+                     small_box_lat*2)
+    lons = np.arange(min_lon + small_box_lon,
+                     max_lon + small_box_lon,
+                     small_box_lon*2)
+
+    # This will hold all of the data in one place:
+    # [[Eg, Ev, Beam 1],...[Eg,Ev,Beam 1],[Eg,Ev,Beam 2],...,[Eg,Ev,Beam6],[Eg,Ev,Beam 6]]
+    # This will be made into a dataframe later.
+    Eg = [[] for _ in range(3*len(lats)*len(lons))]
+    Ev = [[] for _ in range(3*len(lats)*len(lons))]
+    trad_cc = [[] for _ in range(3*len(lats)*len(lons))]
+    beam_str = [[] for _ in range(3*len(lats)*len(lons))]
+    beam = [[] for _ in range(3*len(lats)*len(lons))]
+    data_quantity = [[] for _ in range(3*len(lats)*len(lons))]
+
+    # Define base variable names
     variable_names = [
-        'msw_flag', 'night_flag', 'asr', 'canopy_openness',
-        'snr', 'segment_cover', 'segment_landcover',
+        'msw_flag', 'night_flag', 'asr', 'canopy_openness', 
+        'snr', 'segment_cover', 'segment_landcover', 
         'h_te_best_fit', 'h_te_std', 'terrain_slope', 'longitude', 'latitude',
         'cloud_flag_atm', 'layer_flag'
     ]
-    if DW:
-        variable_names.append('DW')
+    if DW != False:
+        variable_names.append('DW') # config this
+    var_dict = {}
+    for var in variable_names:
+        var_dict[var] = [[] for _ in range(3*len(lats)*len(lons))]
+
+    dataset = [[] for _ in range(3*len(lats)*len(lons))]
+
+    # for plotting
+    plotX = [[] for _ in range(3*len(lats)*len(lons))]
+    plotY = [[] for _ in range(3*len(lats)*len(lons))]
+    atl03s = [[] for _ in range(3*len(lats)*len(lons))]
+    colors = [[] for _ in range(3*len(lats)*len(lons))]
+
+    # for starting inits
+    slope_init = [[] for _ in range(3*len(lats)*len(lons))]
+    slope_weight = [[] for _ in range(3*len(lats)*len(lons))]
+    intercepts = [[] for _ in range(3*len(lats)*len(lons))]
+    maxes = [[] for _ in range(3*len(lats)*len(lons))]
 
     # satellite orientation
     A = h5py.File(atl03path, 'r')
     if list(A['orbit_info']['sc_orient'])[0] == 1:
-        strong = ['gt1r', 'gt2r', 'gt3r']
-        weak = ['gt1l', 'gt2l', 'gt3l']
+    	strong = ['gt1r', 'gt2r', 'gt3r']
+    	weak = ['gt1l', 'gt2l', 'gt3l']
     elif list(A['orbit_info']['sc_orient'])[0] == 0:
         strong = ['gt3l', 'gt2l', 'gt1l']
         weak = ['gt3r', 'gt2r', 'gt1r']
@@ -663,65 +621,65 @@ def pvpg_parallel(dirpath, atl03path, atl08path, cfg, coords = None, file_index 
     tracks = [strong[0], weak[0], strong[1], weak[1], strong[2], weak[2]]
     A.close()
 
-    beam_names = [f"Beam {i}" for i in range(1, 7)]
-    beam_infos = {}
+    # The only purpose of this is to keep the data organised later.
+    beam_names = [f"Beam {i}" for i in range(1,7)]
 
-    # ---------------------------
-    # Load and optionally prefilter each beam
-    # ---------------------------
+    # through the loops this will track the lat/lon pairings for each strong beam
+    LATS = []
+    LONS = []
+
+    # this holds the groups of lat/lon pairs of each strong beam
+    ALL_LATS = []
+    ALL_LONS = []
+
+    skip_weak = 0
+    box_index_base = weak_box_index_base = 0
     for i, gt in enumerate(tracks):
+        
+        if i % 2 == 1:
+            if len(LONS) == 0:
+                continue
+        
+        if skip_weak == 1:
+            skip_weak = 0
+            continue
         try:
             atl03 = get_atl03_struct(atl03path, gt, atl08path)
-        except (KeyError, ValueError, OSError, IndexError):
+        except (KeyError, ValueError, OSError, IndexError) as e:
             print(f"Failed to open ATL03 file for {foldername} file {file_index}'s beam {i+1}.")
+            if i % 2 == 1:
+                weak_box_index_base = box_index_base
             continue
-
         try:
             atl08 = get_atl08_struct(atl08path, gt, atl03)
-        except (KeyError, ValueError, OSError):
+        except (KeyError, ValueError, OSError) as e:
             print(f"Failed to open ATL08 file for {foldername} file {file_index}'s beam {i+1}.")
+            if i % 2 == 1:
+                weak_box_index_base = box_index_base
             continue
 
-        initial_center = coords if coords else _midpoint_from_frames(atl08.df, atl03.df)
-        roi_bounds = None
-
-        # Case: width/height are numbers -> initial ROI filter
-        if has_roi:
-            if initial_center is None:
-                print(f"Beam {i + 1} in {foldername} file {file_index} has no data to define ROI center.")
-                continue
-            roi_bounds = make_box(initial_center, width, height).total_bounds
-            atl03.df = _filter_to_bounds(atl03.df, 'lon_ph', 'lat_ph', roi_bounds)
-            atl08.df = _filter_to_bounds(atl08.df, 'longitude', 'latitude', roi_bounds)
-
-        print()
-        print(f"Beam {i + 1}, file {file_index}")
-        print(f"msw flag: {atl08.df.msw_flag.mean()}")
-        print(f"layer flag: {atl08.df.layer_flag.mean()}")
-
-
-
-        if atl08.df.msw_flag.mean() > cfg['parallel_blocks']['msw_flag_threshold'] or \
-            atl08.df.layer_flag.mean() > cfg['parallel_blocks']['layer_flag_threshold']:
-            print(f"Beam {i + 1} in {foldername} file {file_index} has significant atmospheric scattering.")
-            continue
+        atl03.df = atl03.df[(atl03.df['lon_ph'] >= min_lon) & (atl03.df['lon_ph'] <= max_lon) &\
+                                (atl03.df['lat_ph'] >= min_lat) & (atl03.df['lat_ph'] <= max_lat)]
+        atl08.df = atl08.df[(atl08.df['longitude'] >= min_lon) & (atl08.df['longitude'] <= max_lon) &\
+                                (atl08.df['latitude'] >= min_lat) & (atl08.df['latitude'] <= max_lat)]
 
         if rebinned != 0:
             if atl08.df.shape[0] == 0:
                 print(f"Nothing to rebin for {foldername} file {file_index}'s beam {i+1}.")
+                if i % 2 == 1:
+                    weak_box_index_base = box_index_base
                 continue
             atl08.df = rebin_atl08(atl03, atl08, gt, rebinned, res_field)
 
-        atl08.df = atl08.df[
-            (atl08.df.photon_rate_can_nr < 16) &
-            (atl08.df.photon_rate_te < 16)
-        ]
+        atl08.df = atl08.df[(atl08.df.photon_rate_can_nr < 16) & (atl08.df.photon_rate_te < 16)]# & (atl08.df.h_canopy < 100)]
 
-        if DW:
+        if DW != False:
             filepath = find_dynamicworld_file(foldername)
             da = rioxarray.open_rasterio(filepath, masked=True).rio.reproject("EPSG:4326")
 
             if atl08.df.shape[0] == 0:
+                # Ensure the DW column exists even if there are no rows,
+                # and skip the interpolation that would fail on empty coords.
                 atl08.df['DW'] = np.array([], dtype='float32')
             else:
                 atl08.df['DW'] = da.sel(band=1).interp(
@@ -731,310 +689,216 @@ def pvpg_parallel(dirpath, atl03path, atl08path, cfg, coords = None, file_index 
                 ).values
 
         if landcover == 'forest':
-            if DW:
+            if DW != False:
+                # DynamicWorld: 1 = trees
                 atl08.df = atl08.df[atl08.df['DW'] == 1]
             else:
+                # Original Corine-based forest mask
                 atl08.df = atl08.df[atl08.df['segment_landcover'].isin(
-                    [111, 112, 113, 114, 115, 116, 121, 122, 123, 124, 125, 126]
+                    [111,112,113,114,115,116,121,122,123,124,125,126]
                 )]
         elif landcover == 'all':
-            if DW:
+            if DW != False:
+                # Keep everything except obvious non-land / no-data (here: DW == 0)
                 atl08.df = atl08.df[~atl08.df['DW'].isin([0])]
             else:
                 atl08.df = atl08.df[~atl08.df['segment_landcover'].isin(
-                    [60, 40, 100, 50, 70, 80, 200, 0]
+                    [60,40,100,50,70,80,200,0]
                 )]
 
-        if altitude:
+        if altitude != None:
             atl08.df = atl08.df[abs(atl08.df['h_te_best_fit'] - altitude) <= alt_thresh]
 
-        if trim_atmospheric:
-            atl08.df = atl08.df[(atl08.df['layer_flag'] == 0) | (atl08.df['msw_flag'] == 0)]
+        if trim_atmospheric != False:
+            atl08.df = atl08.df[(atl08.df['layer_flag'] == 0)|(atl08.df['msw_flag'] == 0)]
 
-        if sat_flag:
+        if sat_flag != False:
             atl08.df = atl08.df[atl08.df['sat_flag'] == 0]
 
-        if atl08.df.shape[0] == 0:
-            print(f"Beam {i + 1} in {foldername} file {file_index} has no data after filtering.")
-
-        beam_infos[i] = {
-            'gt': gt,
-            'beam_name': beam_names[i],
-            'atl03': atl03,
-            'atl08': atl08,
-            'roi_bounds': roi_bounds,
-            'center': initial_center if initial_center else _midpoint_from_frames(atl08.df, atl03.df),
-        }
-
-    available_beams = [i for i in range(6) if i in beam_infos and beam_infos[i]['atl08'].df.shape[0] > 0]
-
-    columns_list = ['camera', 'date', 'lon', 'lat', 'pvpg', 'pv', 'pg', 'Eg', 'Ev',
-                    'data_quantity', 'altitude', 'pv_ratio_mean', 'pv_ratio_max', 'beam', 'beam_str',
-                    'outlier'] + variable_names
-
-    if len(available_beams) == 0:
-        return pd.DataFrame(columns=columns_list)
-
-    # ---------------------------
-    # Build box centers and beam->box mapping
-    # ---------------------------
-    box_centers = []
-    beam_to_boxes = {}
-
-    # Case 1:
-    # small_box is None -> one big box, no later spatial filtering
-    if not has_small_boxes:
-        ref_idx = _reference_beam_index(available_beams)
-
-        if coords is not None and has_roi:
-            lon0, lat0 = coords
+        if i % 2 == 0:
+            K = box_index_base
         else:
-            ref_center = beam_infos[ref_idx]['center']
-            if ref_center:
-                ref_center = _midpoint_from_frames(
-                    beam_infos[ref_idx]['atl08'].df,
-                    beam_infos[ref_idx]['atl03'].df
-                )
-            lon0, lat0 = ref_center
+            K = weak_box_index_base
 
-        box_centers = [(lat0, lon0)]
-        for i in available_beams:
-            beam_to_boxes[i] = [0]
+        box_index = K
+        if i % 2 == 0:
+            LATS = []
+            LONS = []
+            lats = np.arange(min_lat + small_box_lat,
+                 max_lat + small_box_lat,
+                 small_box_lat*2)
+            if len(lats) <= 1:
+                lats = [(min_lat + max_lat)/2]
+        if i % 2 == 1:
+            lats, lons = LATS, LONS
 
-    # Case 2:
-    # small_box >= 4 -> shared boxes for all beams based on Beam 3, else Beam 1, else Beam 5
-    elif shared_all_beams:
-        ref_idx = _reference_beam_index(available_beams)
-        ref_info = beam_infos[ref_idx]
+        for n, lat in enumerate(lats):
+            if i % 2 == 0:
+                polygon = make_box((coords[1],lat), width, small_box)
+                sub_min_lon, sub_min_lat, sub_max_lon, sub_max_lat = polygon.total_bounds
+                
+                atl03_temp = atl03.df[(atl03.df['lat_ph'] >= sub_min_lat) & (atl03.df['lat_ph'] <= sub_max_lat)].copy()
+                atl08_temp = atl08.df[(atl08.df['latitude'] >= sub_min_lat) & (atl08.df['latitude'] <= sub_max_lat)].copy()
+    
+                if len(atl08_temp) != 0:
+                    lon = atl08_temp.longitude.mean()
+                else:
+                    print(f'Beam {i + 1}, box {n} in {foldername} file {file_index} has no data.')
+                    continue
 
-        box_centers = _compute_small_box_centers(
-            ref_info['atl08'].df,
-            ref_info['atl03'].df,
-            small_box,
-            lat_bounds=None
-        )
+            if i % 2 == 1:
+                lon = lons[n]
 
-        for i in available_beams:
-            beam_to_boxes[i] = list(range(len(box_centers)))
-
-    # Case 3:
-    # small_box is a small number (< 2, or exactly 2 if you want to allow that)
-    # keep pairwise strong/weak grouping as before
-    else:
-        for pair in [(0, 1), (2, 3), (4, 5)]:
-            pair_available = [idx for idx in pair if idx in available_beams]
-            if len(pair_available) == 0:
-                continue
-
-            ref_idx = pair[0] if pair[0] in pair_available else pair_available[0]
-            ref_info = beam_infos[ref_idx]
-
-            # If an ROI was used, preserve the old behavior of stepping through that lat range.
-            lat_bounds = None
-            if ref_info['roi_bounds']:
-                lat_bounds = (ref_info['roi_bounds'][1], ref_info['roi_bounds'][3])
-
-            pair_centers = _compute_small_box_centers(
-                ref_info['atl08'].df,
-                ref_info['atl03'].df,
-                small_box,
-                lat_bounds=lat_bounds
-            )
-
-            start = len(box_centers)
-            box_centers.extend(pair_centers)
-            pair_box_indices = list(range(start, start + len(pair_centers)))
-
-            for idx in pair_available:
-                beam_to_boxes[idx] = pair_box_indices
-
-    if len(box_centers) == 0:
-        return pd.DataFrame(columns=columns_list)
-
-    boxes = [_new_box(variable_names) for _ in box_centers]
-
-    # ---------------------------
-    # Fill each box with beam data
-    # ---------------------------
-    for i in available_beams:
-        info = beam_infos[i]
-
-        for n, box_index in enumerate(beam_to_boxes.get(i, [])):
-            # Cases with no later filtering: whole dataset is one box
-            if not has_small_boxes:
-                atl03_temp = info['atl03'].df.copy()
-                atl08_temp = info['atl08'].df.copy()
-
-            # Cases with later filtering: small boxes
-            else:
-                lat, lon = box_centers[box_index]
-                sub_bounds = make_box((lon, lat), small_box, small_box).total_bounds
-
-                atl03_temp = _filter_to_bounds(info['atl03'].df, 'lon_ph', 'lat_ph', sub_bounds)
-                atl08_temp = _filter_to_bounds(info['atl08'].df, 'longitude', 'latitude', sub_bounds)
-
+            polygon = make_box((lon,lat), small_box,small_box)
+            sub_min_lon, sub_min_lat, sub_max_lon, sub_max_lat = polygon.total_bounds
+            atl03_temp = atl03.df[(atl03.df['lon_ph'] >= sub_min_lon) & (atl03.df['lon_ph'] <= sub_max_lon) &\
+                                    (atl03.df['lat_ph'] >= sub_min_lat) & (atl03.df['lat_ph'] <= sub_max_lat)].copy()
+            atl08_temp = atl08.df[(atl08.df['longitude'] >= sub_min_lon) & (atl08.df['longitude'] <= sub_max_lon) &\
+                                    (atl08.df['latitude'] >= sub_min_lat) & (atl08.df['latitude'] <= sub_max_lat)].copy()
             if atl08_temp.shape[0] < threshold:
                 print(f'Beam {i + 1}, box {n} in {foldername} file {file_index} has insufficient data.')
+                if i % 2 == 1:
+                    box_index += 1
                 continue
 
-            X = atl08_temp.photon_rate_te.copy()
-            Y = atl08_temp.photon_rate_can_nr.copy()
+            X = atl08_temp.photon_rate_te
+            Y = atl08_temp.photon_rate_can_nr
             if i + 1 == 3:
-                X = X / 0.85
-                Y = Y / 0.85
-
+                X /= 0.85
+                Y /= 0.85
             layer_flag = atl08_temp.layer_flag
             msw_flag = atl08_temp.msw_flag
             cloud_flag_atm = atl08_temp.cloud_flag_atm
-
-            box = boxes[box_index]
-
-            box['plotX'].append(X)
-            box['plotY'].append(Y)
-            box['atl03s'].append(atl03_temp)
-            box['colors'].append(i)
-
-            box['Eg'].append(X)
-            box['Ev'].append(Y)
-            box['data_quantity'].append([len(X) for _ in range(len(X))])
-
-            for var in variable_names:
-                box['var_dict'][var].append(atl08_temp[var])
-
+            plotX[box_index].append(X)
+            plotY[box_index].append(Y)
             if i % 2 == 0:
-                box['beam_str'].append(['strong' for _ in range(len(atl08_temp['n_ca_photons']))])
+                LATS.append(lat)
+                LONS.append(lon)
+            atl03s[box_index].append(atl03_temp)
+            colors[box_index].append(i)
+            Eg[box_index].append(X)
+            Ev[box_index].append(Y)
+            data_quantity[box_index].append([len(X) for x in range(len(X))])
+            for var in variable_names:
+                var_dict[var][box_index].append(atl08_temp[var])
+            if i % 2 == 0:
+                beam_str[box_index].append(['strong' for _ in range(len(atl08_temp['n_ca_photons']))])
             else:
-                box['beam_str'].append(['weak' for _ in range(len(atl08_temp['n_ca_photons']))])
+                beam_str[box_index].append(['weak' for _ in range(len(atl08_temp['n_ca_photons']))])
+            beam[box_index].append([i+1 for _ in range(len(atl08_temp['n_ca_photons']))])
 
-            box['beam'].append([i + 1 for _ in range(len(atl08_temp['n_ca_photons']))])
+            for x, y, lf, mf, cfa in zip(X,Y, layer_flag, msw_flag, cloud_flag_atm):
+                dataset[box_index].append([x, y, beam_names[i], lf, mf, cfa])
+            intercept, slope = starting_intercept(X,Y,cfg['parallel_blocks']['divide_array'])
+            slope_init[box_index].append(min(max(slope, -100 + 1e-3), -1/100 - 1e-3)) #config
+            slope_weight[box_index].append(len(Y))
+            intercepts[box_index].append(min(intercept,16))
+            maxes[box_index].append(16)
 
-            for x, y, lf, mf, cfa in zip(X, Y, layer_flag, msw_flag, cloud_flag_atm):
-                box['dataset'].append([x, y, beam_names[i], lf, mf, cfa])
+            box_index += 1
 
-            intercept, slope = starting_intercept(X, Y, cfg['parallel_blocks']['divide_array'])
-            box['slope_init'].append(min(max(slope, -100 + 1e-3), -1/100 - 1e-3))
-            box['slope_weight'].append(len(Y))
-            box['intercepts'].append(min(intercept, 16))
-            box['maxes'].append(16)
+        if i % 2 == 0:
+            ALL_LATS.extend(LATS)
+            ALL_LONS.extend(LONS)
+            box_index_base = box_index
 
-    # ---------------------------
-    # Fit each box
-    # ---------------------------
+        if i % 2 == 1:
+            LATS = []
+            LONS = []
+            weak_box_index_base = box_index_base
+
     rows = []
 
-    for box_index, (lat, lon) in enumerate(box_centers):
-        box = boxes[box_index]
-        if len(box['dataset']) == 0:
+    box_index = 0
+    for lat, lon in zip(ALL_LATS, ALL_LONS):
+        if len(dataset[box_index]) == 0:
+            box_index += 1
             continue
 
-        slope_weights = np.asarray(box['slope_weight'], dtype=float)
-        slope_weights = slope_weights / slope_weights.sum()
+        slope_weight[box_index] /= np.sum([slope_weight[box_index]])
+        slope_init[box_index] = np.dot(slope_init[box_index], slope_weight[box_index])
 
-        df = pd.DataFrame(
-            box['dataset'],
-            columns=['Eg', 'Ev', 'gt', 'layer_flag', 'msw_flag', 'cloud_flag_atm']
-        )
+        df = pd.DataFrame(dataset[box_index], columns=['Eg', 'Ev', 'gt', 'layer_flag', 'msw_flag', 'cloud_flag_atm'])
         df_encoded = pd.get_dummies(df, columns=['gt'], prefix='', prefix_sep='')
+        coefs, xy, full_xy = odr(df_encoded, intercepts = intercepts[box_index], maxes = maxes[box_index], cfg=cfg, model = model, res = res)
 
-        coefs, xy, full_xy = odr(
-            df_encoded,
-            intercepts=box['intercepts'],
-            maxes=box['maxes'],
-            cfg=cfg,
-            model=model,
-            res=res
-        )
-
+        # Create the array of empty lists
         xx = [[] for _ in range(6)]
         yy = [[] for _ in range(6)]
+
         beams_in_play = []
+        # Iterate over each beam column and append the Eg values belonging to that beam
+        for i in range(1, 7):  # Beam 1 to Beam 6
+            if f'Beam {i}' in xy.columns:
+                xx[i-1] = xy[xy[f'Beam {i}'] == True]['Eg']
+                yy[i-1] = xy[xy[f'Beam {i}'] == True]['Ev']
+                beams_in_play.append(i)
 
-        for beam_num in range(1, 7):
-            col = f'Beam {beam_num}'
-            if col in xy.columns:
-                xx[beam_num - 1] = xy[xy[col] == True]['Eg']
-                yy[beam_num - 1] = xy[xy[col] == True]['Ev']
-                beams_in_play.append(beam_num)
+        if len(colors) == 0:
+            graph_detail = 0
 
-        box_graph_detail = graph_detail if len(box['colors']) > 0 else 0
+        plot_parallel(coefs = coefs,
+                      colors = colors[box_index],
+                      title_date = title_date,
+                      X = plotX[box_index],
+                      Y = plotY[box_index],
+                      xx = xx,
+                      yy = yy,
+                      beam = beam_focus,
+                      file_index = file_index,
+                      graph_detail = graph_detail,
+                      atl03s = atl03s[box_index],
+                      canopy_frac = None,
+                      terrain_frac = None,
+                      coords = (lat,lon))
 
-        plot_parallel(
-            coefs=coefs,
-            colors=box['colors'],
-            title_date=title_date,
-            X=box['plotX'],
-            Y=box['plotY'],
-            xx=xx,
-            yy=yy,
-            beam=beam_focus,
-            file_index=file_index,
-            graph_detail=box_graph_detail,
-            atl03s=box['atl03s'],
-            canopy_frac=None,
-            terrain_frac=None,
-            coords=(lat, lon)
-        )
-
-        # Use np.nan, not None, so np.isnan works later.
-        for missing_beam in [i for i in range(1, 7) if i not in beams_in_play]:
-            coefs = np.insert(coefs, missing_beam, np.nan)
-
-        if np.all(np.isnan([coefs[1], coefs[3], coefs[5]])):
+        indices_to_insert = [i for i in range(1,7) if i not in beams_in_play]
+        for index in indices_to_insert:
+            coefs = np.insert(coefs, index, None)
+        
+        if np.all(np.isnan([coefs[1],coefs[3],coefs[5]])):
             y_strong = np.nan
-            y_strong_max = np.nan
         else:
-            y_strong = np.nanmean([coefs[1], coefs[3], coefs[5]])
-            y_strong_max = np.nanmax([coefs[1], coefs[3], coefs[5]])
-
-        if np.all(np.isnan([coefs[2], coefs[4], coefs[6]])):
+            y_strong = np.nanmean([coefs[1],coefs[3],coefs[5]])
+            y_strong_max = np.nanmax([coefs[1],coefs[3],coefs[5]])
+            
+        if np.all(np.isnan([coefs[2],coefs[4],coefs[6]])):
             y_weak = np.nan
-            y_weak_max = np.nan
         else:
-            y_weak = np.nanmean([coefs[2], coefs[4], coefs[6]])
-            y_weak_max = np.nanmax([coefs[2], coefs[4], coefs[6]])
-
+            y_weak = np.nanmean([coefs[2],coefs[4],coefs[6]])
+            y_weak_max = np.nanmax([coefs[2],coefs[4],coefs[6]])
+            
         if np.any(np.isnan([y_strong, y_weak])):
             pv_ratio_mean = np.nan
             pv_ratio_max = np.nan
         else:
-            pv_ratio_mean = y_strong / y_weak
-            pv_ratio_max = y_strong_max / y_weak_max
+            pv_ratio_mean = y_strong/y_weak
+            pv_ratio_max = y_strong_max/y_weak_max
+        
+        y_intercept_dict = {1: coefs[1], 2: coefs[2], 3: coefs[3], 4: coefs[4], 5: coefs[5], 6: coefs[6]}
+        x_intercept_dict = {1: -coefs[1]/coefs[0], 2: -coefs[2]/coefs[0], 3: -coefs[3]/coefs[0], 4: -coefs[4]/coefs[0],
+                           5: -coefs[5]/coefs[0], 6: -coefs[6]/coefs[0]}
 
-        y_intercept_dict = {k: coefs[k] for k in range(1, 7)}
-        x_intercept_dict = {
-            k: (-coefs[k] / coefs[0]) if not np.isnan(coefs[k]) else np.nan
-            for k in range(1, 7)
-        }
+        for j in range(len(Eg[box_index])):
+            row_data = [foldername, table_date, lon, lat, -coefs[0],
+                        [y_intercept_dict[x] for x in beam[box_index][j]], [x_intercept_dict[x] for x in beam[box_index][j]],
+                        list(Eg[box_index][j]), list(Ev[box_index][j]),
+                        data_quantity[box_index][j], altitude, pv_ratio_mean, pv_ratio_max,
+                        beam[box_index][j], beam_str[box_index][j]]
+            row_data.append(full_xy['Outlier'].iloc[j])
 
-        for j in range(len(box['Eg'])):
-            beam_num = box['beam'][j][0] if len(box['beam'][j]) > 0 else None
-
-            outlier_list = []
-            if beam_num is not None and f'Beam {beam_num}' in full_xy.columns and 'Outlier' in full_xy.columns:
-                outlier_list = full_xy.loc[
-                    full_xy[f'Beam {beam_num}'] == True,
-                    'Outlier'
-                ].tolist()
-            if len(outlier_list) == 0:
-                outlier_list = [1 for _ in range(len(box['Eg'][j]))]
-
-            row_data = [
-                foldername, table_date, lon, lat, -coefs[0],
-                [y_intercept_dict[x] for x in box['beam'][j]],
-                [x_intercept_dict[x] for x in box['beam'][j]],
-                list(box['Eg'][j]), list(box['Ev'][j]),
-                box['data_quantity'][j], altitude, pv_ratio_mean, pv_ratio_max,
-                box['beam'][j], box['beam_str'][j], outlier_list
-            ]
-
-            for var in variable_names:
-                row_data.append(list(box['var_dict'][var][j]))
-
+            # Add the rest of the strong-weak pairs dynamically
+            for var in variable_names:  # Start from msw, as meanEg and meanEv are already included
+                # row_data.append(non_negative_subset(var_dict[var][box_index])[j])
+                row_data.append(list(var_dict[var][box_index][j]))
             rows.append(row_data)
+        box_index+=1
 
-    BIG_DF = pd.DataFrame(rows, columns=columns_list)
-    if BIG_DF.empty:
-        return BIG_DF
-
-    explode_cols = [c for c in BIG_DF.columns if BIG_DF[c].apply(lambda x: isinstance(x, list)).any()]
-    return BIG_DF.explode(explode_cols, ignore_index=True)
+    columns_list = ['camera', 'date', 'lon', 'lat', 'pvpg', 'pv', 'pg', 'Eg', 'Ev',
+                    'data_quantity', 'altitude', 'pv_ratio_mean', 'pv_ratio_max','beam', 'beam_str',
+                    'outlier']
+    for var in variable_names:  # Start from msw, as meanEg and meanEv are already included
+        columns_list.append(var)
+    BIG_DF = pd.DataFrame(rows,columns=[columns_list])
+    BIG_DF.columns = BIG_DF.columns.get_level_values(0)
+    return BIG_DF.explode([c for c in BIG_DF.columns if isinstance(BIG_DF[c].iloc[0], list)], ignore_index=True)

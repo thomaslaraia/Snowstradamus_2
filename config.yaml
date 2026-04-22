@@ -32,6 +32,10 @@ parallel_blocks:
                                                                                                                       # landcover mask
   DW: False # if true, uses DynamicWorld landcover from Landsat imagery used instead of Copernicus 2019 Global
   
+  # these are used to avoid wasting time processing bad data
+  msw_flag_threshold: 0.5
+  layer_flag_threshold: 0.5
+
   rebinned: 0 # 0 for no rebinning (100m). N rebins the data into N meter segments
   res_field: 'alongtrack' # the field that is used to rebin, i.e. alongtrack here makes sure we are doing N meters.
 
