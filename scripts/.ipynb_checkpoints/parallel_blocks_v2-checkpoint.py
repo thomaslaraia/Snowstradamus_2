@@ -15,8 +15,11 @@ import random
 import sys
 import gc
 
-sys.path.insert(1,'/home/s1803229/src/PhoREAL')
-# sys.path.insert(1,'C:/Users/s1803229/Documents/PhoREAL')
+PHOREAL_PATH = Path(__file__).resolve().parents[2] / "src" / "PhoREAL"
+if str(PHOREAL_PATH) not in sys.path:
+    sys.path.insert(1, str(PHOREAL_PATH))
+# sys.path.insert(1,'/home/s1803229/src/PhoREAL')
+# sys.path.insert(1,'C:/Users/s1803229/Documents/src/PhoREAL')
 
 from phoreal.reader import get_atl03_struct, get_atl08_struct
 from phoreal.binner import rebin_atl08
@@ -418,7 +421,7 @@ def plot_parallel(
         return
 
     # Title
-    if file_index is not None:
+    if file_index:
         fig.suptitle(
             title_date + ' - N = ' + str(file_index),
             fontsize=16 if graph_detail == 2 else 18,
@@ -438,9 +441,9 @@ def plot_parallel(
                 axes[c].set_title(
                     f"{beam_names[c]} - TF = {round(terrain_frac[c], 2)}, CF = {round(canopy_frac[c], 2)}"
                 )
-            elif canopy_frac is not None:
+            elif canopy_frac:
                 axes[c].set_title(f"{beam_names[c]} - CF = {round(canopy_frac[c], 2)}")
-            elif terrain_frac is not None:
+            elif terrain_frac:
                 axes[c].set_title(f"{beam_names[c]} - TF = {round(terrain_frac[c], 2)}")
             else:
                 axes[c].set_title(f"{beam_names[c]}")
@@ -631,7 +634,7 @@ def pvpg_parallel(dirpath, atl03path, atl08path, cfg, coords = None, file_index 
 
     has_roi = (coords is not None and width is not None and height is not None)
     has_small_boxes = (small_box is not None)
-    shared_all_beams = (small_box is None) or (small_box >= 4 if small_box is not None else False)
+    shared_all_beams = (small_box is None) or (small_box >= 4 if small_box else False)
 
     foldername = dirpath.split('/')[-2]
 
@@ -645,7 +648,7 @@ def pvpg_parallel(dirpath, atl03path, atl08path, cfg, coords = None, file_index 
         'h_te_best_fit', 'h_te_std', 'terrain_slope', 'longitude', 'latitude',
         'cloud_flag_atm', 'layer_flag'
     ]
-    if DW is not False:
+    if DW:
         variable_names.append('DW')
 
     # satellite orientation
@@ -682,7 +685,7 @@ def pvpg_parallel(dirpath, atl03path, atl08path, cfg, coords = None, file_index 
             print(f"Failed to open ATL08 file for {foldername} file {file_index}'s beam {i+1}.")
             continue
 
-        initial_center = coords if coords is not None else _midpoint_from_frames(atl08.df, atl03.df)
+        initial_center = coords if coords else _midpoint_from_frames(atl08.df, atl03.df)
         roi_bounds = None
 
         # Case: width/height are numbers -> initial ROI filter
@@ -694,9 +697,17 @@ def pvpg_parallel(dirpath, atl03path, atl08path, cfg, coords = None, file_index 
             atl03.df = _filter_to_bounds(atl03.df, 'lon_ph', 'lat_ph', roi_bounds)
             atl08.df = _filter_to_bounds(atl08.df, 'longitude', 'latitude', roi_bounds)
 
+        print()
+        print(f"Beam {i + 1}, file {file_index}")
         print(f"msw flag: {atl08.df.msw_flag.mean()}")
         print(f"layer flag: {atl08.df.layer_flag.mean()}")
-        print(f"sat flag: {atl08.df.sat_flag.mean()}")
+
+
+
+        if atl08.df.msw_flag.mean() > cfg['parallel_blocks']['msw_flag_threshold'] or \
+            atl08.df.layer_flag.mean() > cfg['parallel_blocks']['layer_flag_threshold']:
+            print(f"Beam {i + 1} in {foldername} file {file_index} has significant atmospheric scattering.")
+            continue
 
         if rebinned != 0:
             if atl08.df.shape[0] == 0:
@@ -709,7 +720,7 @@ def pvpg_parallel(dirpath, atl03path, atl08path, cfg, coords = None, file_index 
             (atl08.df.photon_rate_te < 16)
         ]
 
-        if DW is not False:
+        if DW:
             filepath = find_dynamicworld_file(foldername)
             da = rioxarray.open_rasterio(filepath, masked=True).rio.reproject("EPSG:4326")
 
@@ -723,28 +734,31 @@ def pvpg_parallel(dirpath, atl03path, atl08path, cfg, coords = None, file_index 
                 ).values
 
         if landcover == 'forest':
-            if DW is not False:
+            if DW:
                 atl08.df = atl08.df[atl08.df['DW'] == 1]
             else:
                 atl08.df = atl08.df[atl08.df['segment_landcover'].isin(
                     [111, 112, 113, 114, 115, 116, 121, 122, 123, 124, 125, 126]
                 )]
         elif landcover == 'all':
-            if DW is not False:
+            if DW:
                 atl08.df = atl08.df[~atl08.df['DW'].isin([0])]
             else:
                 atl08.df = atl08.df[~atl08.df['segment_landcover'].isin(
                     [60, 40, 100, 50, 70, 80, 200, 0]
                 )]
 
-        if altitude is not None:
+        if altitude:
             atl08.df = atl08.df[abs(atl08.df['h_te_best_fit'] - altitude) <= alt_thresh]
 
-        if trim_atmospheric is not False:
+        if trim_atmospheric:
             atl08.df = atl08.df[(atl08.df['layer_flag'] == 0) | (atl08.df['msw_flag'] == 0)]
 
-        if sat_flag is not False:
+        if sat_flag:
             atl08.df = atl08.df[atl08.df['sat_flag'] == 0]
+
+        if atl08.df.shape[0] == 0:
+            print(f"Beam {i + 1} in {foldername} file {file_index} has no data after filtering.")
 
         beam_infos[i] = {
             'gt': gt,
@@ -752,7 +766,7 @@ def pvpg_parallel(dirpath, atl03path, atl08path, cfg, coords = None, file_index 
             'atl03': atl03,
             'atl08': atl08,
             'roi_bounds': roi_bounds,
-            'center': initial_center if initial_center is not None else _midpoint_from_frames(atl08.df, atl03.df),
+            'center': initial_center if initial_center else _midpoint_from_frames(atl08.df, atl03.df),
         }
 
     available_beams = [i for i in range(6) if i in beam_infos and beam_infos[i]['atl08'].df.shape[0] > 0]
@@ -779,7 +793,7 @@ def pvpg_parallel(dirpath, atl03path, atl08path, cfg, coords = None, file_index 
             lon0, lat0 = coords
         else:
             ref_center = beam_infos[ref_idx]['center']
-            if ref_center is None:
+            if ref_center:
                 ref_center = _midpoint_from_frames(
                     beam_infos[ref_idx]['atl08'].df,
                     beam_infos[ref_idx]['atl03'].df
@@ -820,7 +834,7 @@ def pvpg_parallel(dirpath, atl03path, atl08path, cfg, coords = None, file_index 
 
             # If an ROI was used, preserve the old behavior of stepping through that lat range.
             lat_bounds = None
-            if ref_info['roi_bounds'] is not None:
+            if ref_info['roi_bounds']:
                 lat_bounds = (ref_info['roi_bounds'][1], ref_info['roi_bounds'][3])
 
             pair_centers = _compute_small_box_centers(

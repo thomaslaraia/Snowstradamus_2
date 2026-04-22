@@ -15,8 +15,11 @@ import random
 import sys
 import gc
 
-sys.path.insert(1,'/../../src/PhoREAL')
-# sys.path.insert(1,'C:/Users/s1803229/Documents/PhoREAL')
+PHOREAL_PATH = Path(__file__).resolve().parents[2] / "src" / "PhoREAL"
+if str(PHOREAL_PATH) not in sys.path:
+    sys.path.insert(1, str(PHOREAL_PATH))
+# sys.path.insert(1,'/home/s1803229/src/PhoREAL')
+# sys.path.insert(1,'C:/Users/s1803229/Documents/src/PhoREAL')
 
 from phoreal.reader import get_atl03_struct, get_atl08_struct
 from phoreal.binner import rebin_atl08
