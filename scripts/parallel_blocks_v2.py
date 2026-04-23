@@ -697,16 +697,16 @@ def pvpg_parallel(dirpath, atl03path, atl08path, cfg, coords = None, file_index 
             atl03.df = _filter_to_bounds(atl03.df, 'lon_ph', 'lat_ph', roi_bounds)
             atl08.df = _filter_to_bounds(atl08.df, 'longitude', 'latitude', roi_bounds)
 
-        print()
-        print(f"Beam {i + 1}, file {file_index}")
-        print(f"msw flag: {atl08.df.msw_flag.mean()}")
-        print(f"layer flag: {atl08.df.layer_flag.mean()}")
+        # print()
+        # print(f"Beam {i + 1}, file {file_index}")
+        # print(f"msw flag: {atl08.df.msw_flag.mean()}")
+        # print(f"layer flag: {atl08.df.layer_flag.mean()}")
 
 
 
         if atl08.df.msw_flag.mean() > cfg['parallel_blocks']['msw_flag_threshold'] or \
             atl08.df.layer_flag.mean() > cfg['parallel_blocks']['layer_flag_threshold']:
-            print(f"Beam {i + 1} in {foldername} file {file_index} has significant atmospheric scattering.")
+            # print(f"Beam {i + 1} in {foldername} file {file_index} has significant atmospheric scattering.")
             continue
 
         if rebinned != 0:
