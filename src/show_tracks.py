@@ -1,9 +1,9 @@
-from scripts.imports import os, glob, pdb, np, h5py, pd, xr, gpd, Proj, Transformer, CRS, \
+from src.imports import os, glob, pdb, np, h5py, pd, xr, gpd, Proj, Transformer, CRS, \
                         plt, cmap, Model, Data, ODR, datetime, rasterio, show, \
                         ccrs, cfeature
                         
-from scripts.track_pairs import *
-from scripts.DW import *
+from src.track_pairs import *
+from src.DW import *
 from shapely.geometry import Point, box as shapely_box
 
 from cartopy.mpl.ticker import LongitudeFormatter, LatitudeFormatter
