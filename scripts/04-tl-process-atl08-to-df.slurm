@@ -1,27 +1,30 @@
 #!/bin/bash
-#SBATCH --job-name=process-atl08-df
+#SBATCH --job-name=04-tl-process-atl08-df
 #SBATCH --output=./slurm/%x_%j.out
 #SBATCH --error=./slurm/%x_%j.err
-#SBATCH --time=12:00:00
-#SBATCH --cpus-per-task=1
-#SBATCH --mem=16G
+#SBATCH --time=24:00:00
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=24G
 
 set -euo pipefail
 
 if [ "$#" -ne 2 ]; then
     echo "Usage: sbatch 04-tl-process-atl08-to-df.slurm <folder> <output.pkl>"
-    echo "Example: sbatch 04-tl-process-atl08-to-df.slurm ontario_test ontario_test.pkl"
+    echo "Example: sbatch 04-tl-process-atl08-to-df.slurm ontario ontario.pkl"
     exit 1
 fi
 
 FOLDER="$1"
 OUTPUT="$2"
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$SLURM_SUBMIT_DIR"
+
+cd "$SCRIPT_DIR"
 
 echo "Running on host: $(hostname)"
 echo "Started at: $(date)"
-echo "Script dir: $SCRIPT_DIR"
+echo "Submit/script dir: $SCRIPT_DIR"
+echo "Current dir: $(pwd)"
 echo "Input folder: $FOLDER"
 echo "Output pickle: $OUTPUT"
 

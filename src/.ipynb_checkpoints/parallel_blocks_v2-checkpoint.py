@@ -1,6 +1,6 @@
-from scripts.imports import *
-from scripts.track_pairs import *
-from scripts.DW import *
+from src.imports import *
+from src.track_pairs import *
+from src.DW import *
 import geopandas as gpd
 from shapely.geometry import Point, box as shapely_box
 from scipy.optimize import least_squares, minimize
@@ -771,7 +771,7 @@ def pvpg_parallel(dirpath, atl03path, atl08path, cfg, coords = None, file_index 
 
     available_beams = [i for i in range(6) if i in beam_infos and beam_infos[i]['atl08'].df.shape[0] > 0]
 
-    columns_list = ['camera', 'date', 'lon', 'lat', 'pvpg', 'pv', 'pg', 'Eg', 'Ev',
+    columns_list = ['folder', 'date', 'lon', 'lat', 'pvpg', 'pv', 'pg', 'Eg', 'Ev',
                     'data_quantity', 'altitude', 'pv_ratio_mean', 'pv_ratio_max', 'beam', 'beam_str',
                     'outlier'] + variable_names
 

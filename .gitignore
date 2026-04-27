@@ -1,2 +1,9 @@
 */__pycache__/*
 */scripts/__pycache__/*
+
+# Generated outputs
+output/
+scripts/slurm/
+*.out
+*.err
+.ipynb_checkpoints/
