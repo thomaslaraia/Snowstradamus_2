@@ -2,7 +2,6 @@
 */scripts/__pycache__/*
 
 # Generated outputs
-output/
 scripts/slurm/
 *.out
 *.err
