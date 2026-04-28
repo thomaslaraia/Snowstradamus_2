@@ -5,6 +5,7 @@ from pathlib import Path
 import argparse
 from datetime import datetime
 import time
+import gc
 
 import yaml
 import pandas as pd
@@ -26,6 +27,15 @@ def elapsed_str(start_time):
 
     return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
 
+def make_output_filename(atl03_file, file_index):
+    """
+    Create filename like 181105_N0023.parquet from ATL03 datetime and index.
+    """
+    dt = parse_filename_datetime(atl03_file)
+    date_tag = dt.strftime("%y%m%d")
+
+    return f"{date_tag}_N{file_index:04d}.parquet"
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -35,7 +45,7 @@ def main():
     )
     parser.add_argument(
         "output",
-        help="Output pickle name.",
+        help="Output dataset name. Example: ontario_test",
     )
 
     args = parser.parse_args()
@@ -48,51 +58,36 @@ def main():
     with open(config_path, "r") as f:
         cfg = yaml.safe_load(f)
 
-    # Build dirpath from user argument
     dirpath = f"../../scratch/{args.folder}/"
 
     all_ATL03, all_ATL08, failed_ATL03 = track_pairs(dirpath, failed=True)
     N = len(all_ATL03)
 
-    output_name = args.output
     output_dir = PROJECT_ROOT / "output"
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    out_path = output_dir / output_name
-    backup_path = output_dir / f"{Path(output_name).stem}_BACKUP.pkl"
+    output_stem = Path(args.output).stem
+    dataset_dir = output_dir / f"{output_stem}"
+    dataset_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"Started at: {start_datetime}")
     print(f"Elapsed: {elapsed_str(start_time)}")
     print(f"N = {N}")
-
-    all_data = []
-    completed_indices = set()
-
-    # Resume from backup if it exists
-    if backup_path.exists():
-        print(f"Found backup pickle, resuming from:")
-        print(backup_path)
-
-        backup_df = pd.read_pickle(backup_path)
-
-        if "file_index" not in backup_df.columns:
-            raise ValueError(
-                f"Backup file exists but does not contain 'file_index': {backup_path}"
-            )
-
-        completed_indices = set(backup_df["file_index"].dropna().astype(int).unique())
-        all_data = [backup_df]
-
-        print(f"Loaded backup with {len(backup_df)} rows.")
-        print(f"Already completed {len(completed_indices)} files.")
-        print(f"Continuing from remaining files.")
+    print(f"Writing Parquet files to:")
+    print(dataset_dir)
 
     for i in range(N):
-        if i in completed_indices:
-            print(f"Skipping already completed file_index={i}: {all_ATL03[i]}")
+        output_filename = make_output_filename(all_ATL03[i], i)
+
+        out_file = dataset_dir / output_filename
+        tmp_file = dataset_dir / f".{output_filename}.tmp"
+
+        if out_file.exists():
+            print(f"Skipping existing file_index={i}: {out_file.name}")
             continue
 
         print(f"Processing {i + 1}/{N}: {all_ATL03[i]}")
+        print(f"Output file: {out_file.name}")
 
         try:
             data = pvpg_parallel(
@@ -105,45 +100,42 @@ def main():
                 graph_detail=0,
             )
 
-            if data is not None and len(data) > 0:
-                print(f"Valid data returned after {elapsed_str(start_time)} for i={i}")
+            if data is None or len(data) == 0:
+                print(f"No valid data returned for file_index={i}")
+                continue
 
-                data = data.copy()
-                data["file_index"] = i
-                data["ATL03"] = all_ATL03[i]
-                data["ATL08"] = all_ATL08[i]
-                all_data.append(data)
-                completed_indices.add(i)
+            print(f"Valid data returned after {elapsed_str(start_time)} for i={i}")
 
-                # Save intermediate backup after each successful file
-                df_backup = pd.concat(all_data, ignore_index=True)
-                df_backup.to_pickle(backup_path)
+            data = data.copy()
+            data["file_index"] = i
+            data["ATL03"] = all_ATL03[i]
+            data["ATL08"] = all_ATL08[i]
 
-                print(f"Saved backup with {len(df_backup)} rows to:")
-                print(backup_path)
+            data.to_parquet(
+                tmp_file,
+                index=False,
+                engine="pyarrow",
+                compression="zstd",
+            )
+
+            tmp_file.replace(out_file)
+
+            print(f"Saved {len(data)} rows to:")
+            print(out_file)
+
+            del data
+            gc.collect()
 
         except Exception as e:
             print(f"Failed on file_index={i}: {all_ATL03[i]}")
             print(e)
 
-    if len(all_data) == 0:
-        print("No dataframes were returned. Nothing saved.")
-        return
-
-    df_all = pd.concat(all_data, ignore_index=True)
-
-    df_all.to_pickle(out_path)
-
-    print(f"Saved combined dataframe with {len(df_all)} rows to:")
-    print(out_path)
-
-    # Delete backup after successful final save
-    if backup_path.exists():
-        backup_path.unlink()
-        print(f"Deleted backup pickle:")
-        print(backup_path)
+            if tmp_file.exists():
+                tmp_file.unlink()
 
     print(f"Finished after: {elapsed_str(start_time)}")
+    print(f"Output dataset:")
+    print(dataset_dir)
 
 
 if __name__ == "__main__":

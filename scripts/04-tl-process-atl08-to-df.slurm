@@ -33,6 +33,6 @@ echo "Output pickle: $OUTPUT"
 # source ~/.bashrc
 # conda activate your_env_name
 
-python "$SCRIPT_DIR/04-tl-process-atl08-to-df.py" "$FOLDER" "$OUTPUT"
+python -u "$SCRIPT_DIR/04-tl-process-atl08-to-df.py" "$FOLDER" "$OUTPUT"
 
 echo "Finished at: $(date)"
