@@ -10,8 +10,5 @@ set -euo pipefail
 
 mkdir -p ./slurm
 
-source ~/.bashrc
-conda activate snow_win
-
-python download_era5_land.py \
+python 07-tl-copernicus-era5-download.py \
   --out-dir ../../scratch/ERA5

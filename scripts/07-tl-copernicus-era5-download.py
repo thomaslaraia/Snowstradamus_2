@@ -113,7 +113,7 @@ def download_month(client, out_dir, year, month, overwrite=False):
     for p in part_paths:
         p.unlink(missing_ok=True)
 
-    # print(f"Saved: {final_path}")
+    print(f"Saved: {final_path}")
 
 
 def main():
