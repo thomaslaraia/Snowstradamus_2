@@ -18,7 +18,7 @@ from dask.callbacks import Callback
 DATASET = "reanalysis-era5-land"
 
 # CDS area order is [north, west, south, east].
-AREA = [85, -180, 25, 180]
+AREA = [53, -95, 48, -87]
 
 VARIABLE_GROUPS = {
     "temp": [
@@ -211,7 +211,7 @@ def netcdf_encoding(dataset):
     return encoding
 
 
-def iter_months(start_year=2018, start_month=10, end_year=2025, end_month=9):
+def iter_months(start_year=2018, start_month=7, end_year=2026, end_month=6):
     y, m = start_year, start_month
 
     while (y < end_year) or (y == end_year and m <= end_month):
@@ -392,7 +392,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--out-dir",
-        default="../../data_store/ERA5",
+        default="../../scratch/ERA5/ontario",
         help="Output directory for monthly ERA5 files",
     )
     parser.add_argument(
