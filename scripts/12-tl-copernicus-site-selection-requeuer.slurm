@@ -8,6 +8,7 @@
 #SBATCH --requeue
 #SBATCH --signal=B:USR1@120
 #SBATCH --open-mode=append
+#SBATCH --account=geos_extra
 
 set -euo pipefail
 
