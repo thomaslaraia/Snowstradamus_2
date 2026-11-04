@@ -263,14 +263,17 @@ def process_resource(site, resource, cfg, provider, *, buffer_m=300,
             continue
         p_roi = _filter_to_bounds(p, 'longitude', 'latitude', bounds)
         msw, layer = p_roi.msw_flag.mean(), p_roi.layer_flag.mean()
-        print(f'  {beam}: ATL08={len(p_roi)} msw={msw:.3f}/{c["msw_flag_threshold"]} '
-              f'layer={layer:.3f}/{c["layer_flag_threshold"]}', flush=True)
-        if not (len(p_roi) and np.isfinite(msw) and np.isfinite(layer)):
-            raise RuntimeError(f'{beam}: missing atmospheric quality; retry on a later run')
-        if msw > c['msw_flag_threshold'] or layer > c['layer_flag_threshold']:
-            diagnostics.append(dict(beam=beam, status='atmosphere_rejected',
-                                    msw_mean=msw, layer_mean=layer, photon_query=False))
-            print('    Skipped before photon retrieval', flush=True)
+        msw_min = p_roi.msw_flag.min()
+        layer_min = p_roi.layer_flag.min()
+        print(f'  {beam}: ATL08={len(p_roi)} min msw={msw_min:.3f} '
+              f'min layer={layer_min:.3f}', flush=True)
+        # Skip only when both minima rule out any zero-flag segment.
+        if c['trim_atmospheric'] and msw_min >= 1 and layer_min >= 1:
+            diagnostics.append(dict(
+                beam=beam, status='atmosphere_rejected',
+                msw_min=msw_min, layer_min=layer_min,
+                msw_mean=msw, layer_mean=layer, photon_query=False))
+            print('    Skipped: both flag minima are at least 1', flush=True)
             continue
         f = fetch_photons(resource, beam, polygon, quality_values)
         if f.empty:
@@ -283,10 +286,6 @@ def process_resource(site, resource, cfg, provider, *, buffer_m=300,
         bins = rebin_and_attach(f, p, length, shot_columns)
         bins = _filter_to_bounds(bins, 'longitude', 'latitude', bounds)
         matched = bins.atl08_matched & ~bins.edge_bin
-        p_roi = _filter_to_bounds(p, 'longitude', 'latitude', bounds)
-        atmosphere_ok = (len(p_roi) > 0 and
-            p_roi.msw_flag.mean() <= c['msw_flag_threshold'] and
-            p_roi.layer_flag.mean() <= c['layer_flag_threshold'])
         keep = matched & (bins.photon_rate_te < 16) & (bins.photon_rate_can_nr < 16)
         if c.get('DW'):
             bins['DW'] = np.asarray(dw_sampler(site, bins))
@@ -304,11 +303,11 @@ def process_resource(site, resource, cfg, provider, *, buffer_m=300,
             keep &= bins.layer_flag.eq(0) | bins.msw_flag.eq(0)  # original OR
         if c['sat_flag']:
             keep &= bins.sat_flag.eq(0)
-        bins['used_for_processing'] = keep & atmosphere_ok
+        bins['used_for_processing'] = keep
         bins['pipeline_beam'] = i+1
         bins['site_id'] = str(site.site_id)
         joined.append(bins)
-        diagnostics.append(dict(beam=beam, pipeline_beam=i+1, status='ok' if atmosphere_ok else 'atmosphere_rejected',
+        diagnostics.append(dict(beam=beam, pipeline_beam=i+1, status='ok', msw_mean=msw, layer_mean=layer,
             photons=len(f), bins=len(bins), matched_bins=int(bins.atl08_matched.sum()),
             accepted_bins=int(bins.used_for_processing.sum())))
         selected = bins[bins.used_for_processing].copy()
@@ -345,7 +344,7 @@ def run_sites(sites, cfg, start_time, end_time, *, resources=None, max_resources
     from sliderule import sliderule, earthdata
     sites = load_sites(sites)
     required = {'rebinned', 'small_box_half_side', 'altitude', 'alt_thresh',
-        'insufficient_data_threshold', 'msw_flag_threshold', 'layer_flag_threshold',
+        'insufficient_data_threshold',
         'landcover', 'trim_atmospheric', 'sat_flag', 'divide_array',
         'outlier_removal', 'slope_init', 'slope_lb', 'slope_ub', 'loss', 'f_scale', 'w'}
     missing = required - set(cfg.get('parallel_blocks', {}))
