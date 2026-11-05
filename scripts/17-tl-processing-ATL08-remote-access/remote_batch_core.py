@@ -982,7 +982,7 @@ def fit_prepared(beam_infos, cfg, foldername, resource, coords=None,
                 atl08_temp = _filter_to_bounds(info['atl08'].df, 'longitude', 'latitude', sub_bounds)
 
             if atl08_temp.shape[0] < threshold:
-                print(f'Beam {i + 1}, box {n} in {foldername} file {file_index} has insufficient data.')
+                print(f'Beam {i + 1}, box {n} in {foldername} file {resource} has insufficient data.')
                 continue
 
             X = atl08_temp.photon_rate_te.copy()
@@ -1190,3 +1190,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+

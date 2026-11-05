@@ -15,7 +15,7 @@ parallel_blocks:
 
   roi_half_width: # half-width of roi in km
   roi_half_height: # half-height of roi in km
-  small_box_half_side: 1 # half-width/half-height of boxes that follow each groundtrack; HAS TO BE <= 2 OR >= 4
+  small_box_half_side: 0.5 # half-width/half-height of boxes that follow each groundtrack; HAS TO BE <= 2 OR >= 4
                                                   # design choice because beams are 3.3km apart, so
                                                   # <= 2 guarantees boxes only have one beam pair while 
                                                   # >= 4 makes sure every beam is included.

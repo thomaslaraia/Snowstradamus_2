@@ -1,10 +1,10 @@
 #!/bin/bash
-#SBATCH --job-name=era5-daily
-#SBATCH --time=24:00:00
+#SBATCH --job-name=18-era5-snowfall-windgust
+#SBATCH --time=4-00:00:00
 #SBATCH --mem=24G
 #SBATCH --cpus-per-task=4
-#SBATCH --output=./slurm/era5-daily-%j.out
-#SBATCH --error=./slurm/era5-daily-%j.err
+#SBATCH --output=./slurm/18-era5-snowfall-windgust-%j.out
+#SBATCH --error=./slurm/18-era5-snowfall-windgust-%j.err
 #SBATCH --requeue
 #SBATCH --signal=B:USR1@300
 #SBATCH --account=geos_extra

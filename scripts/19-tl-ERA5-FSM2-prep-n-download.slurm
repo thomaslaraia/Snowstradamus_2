@@ -1,10 +1,10 @@
 #!/bin/bash
-#SBATCH --job-name=era5-fsm2
-#SBATCH --time=24:00:00
+#SBATCH --job-name=19-era5-fsm2
+#SBATCH --time=4-00:00:00
 #SBATCH --mem=24G
 #SBATCH --cpus-per-task=4
-#SBATCH --output=./slurm/era5-fsm2-%j.out
-#SBATCH --error=./slurm/era5-fsm2-%j.err
+#SBATCH --output=./slurm/19-era5-fsm2-%j.out
+#SBATCH --error=./slurm/19-era5-fsm2-%j.err
 #SBATCH --account=geos_extra
 #SBATCH --requeue
 #SBATCH --signal=B:USR1@120
@@ -54,8 +54,7 @@ python -u 19-tl-ERA5-FSM2-prep-n-download.py \
     "${region_args[@]}" \
     --start-month "$START_MONTH" --end-month "$END_MONTH" \
     --era5-root "$ERA5_ROOT" --fsm2-root "$FSM2_ROOT" \
-    --vai-path "$VAI_PATH" --vegh-path "$VEGH_PATH" \
-    --workers "$SLURM_CPUS_PER_TASK" &
+    --vai-path "$VAI_PATH" --vegh-path "$VEGH_PATH"
 python_pid=$!
 
 status=0
