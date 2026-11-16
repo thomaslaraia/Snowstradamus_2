@@ -6,3 +6,4 @@ scripts/slurm/
 *.out
 *.err
 .ipynb_checkpoints/
+/scripts/22-tl-FSM2/FSM2_source/

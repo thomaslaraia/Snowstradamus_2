@@ -1,0 +1,647 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Running FSM2 on your ERA5-Land grid</title><style>body{font-family:system-ui,sans-serif;max-width:1000px;margin:40px auto;padding:0 28px;color:#172b35;line-height:1.65}h1,h2,h3{line-height:1.25;color:#123b46}h1{font-size:2.2rem}h2{border-top:1px solid #cddbdd;padding-top:24px;margin-top:40px}pre{background:#eef3f5;padding:16px;overflow-x:auto;font-size:13px;line-height:1.5}code{font-family:ui-monospace,monospace}table{border-collapse:collapse;width:100%;font-size:14px}th,td{border:1px solid #ccdadd;padding:9px 12px;text-align:left;vertical-align:top}th{background:#e7eff0}a{color:#126875}li{margin:5px 0}blockquote{border-left:4px solid #377e8e;padding-left:20px} @media print{body{font-size:10pt;margin:0;max-width:none}pre{white-space:pre-wrap}h2,h3{break-after:avoid}tr{break-inside:avoid}}</style></head><body><h1 id="running-fsm2-on-your-era5-land-grid">Running FSM2 on your ERA5-Land grid</h1>
+<p>A practical guide from installation to hourly canopy snow mass • 10 November 2026</p>
+<h2 id="1-what-you-will-get">1. What you will get</h2>
+<p>This guide and the accompanying scripts turn your monthly <code>driving_data.nc</code> files into monthly model outputs containing:</p>
+<ul>
+<li><code>canopy_snow_mass(time, latitude, longitude)</code>, in <strong>kg m⁻²</strong>: the main research output;</li>
+<li><code>ground_snow_mass(time, latitude, longitude)</code>, in kg m⁻²;</li>
+<li><code>snow_depth(time, latitude, longitude)</code>, in metres;</li>
+<li>the static VAI, canopy height and a mask identifying simulated forest cells.</li>
+</ul>
+<p>You do not need to learn Fortran to follow this workflow. Python prepares and checks each cell's forcing, launches the compiled model, and assembles the results. The Fortran physics are left unchanged.</p>
+<p><strong>Your preparation script supplies the core meteorological and vegetation variables. It does not yet supply directly runnable FSM2 forcing.</strong> It retains ERA5-Land units and accumulation conventions. The supplied runner performs the additional conversions.</p>
+<p>I inspected your attached <code>19-tl-ERA5-FSM2-prep-n-download.py</code>, the upstream FSM2 source and its user guide. I did not have your actual NetCDF files. Check their contents and units in section 5 before starting a production run. Existing files may have been created by an earlier script: the attached script skips existing outputs.</p>
+<p>The source inspected identifies itself as <strong>FSM2 2.1.2</strong>, at commit:</p>
+<p><code>a76945e75b36628161f4679428ed72dce090b368</code></p>
+<p>The published 2025 description is for version 2.1.1. The build script fixes the code to the inspected commit so later repository changes do not silently alter this workflow. Source links are in section 16.</p>
+<h2 id="2-how-a-grid-run-works">2. How a grid run works</h2>
+<p>FSM2 advances the snow, vegetation and soil state through time in a vertical column. For this workflow, each ERA5-Land cell is a separate column with its own weather, VAI and canopy height. There is no exchange of snow or water between neighbouring cells, and no terrain redistribution is introduced.</p>
+<p>The order of work is:</p>
+<ol>
+<li>Compile FSM2 once to create an executable program.</li>
+<li>Read one cell's weather across all consecutive monthly files.</li>
+<li>Convert its accumulated weather into hourly forcing.</li>
+<li>Spin up its snow, canopy and soil state.</li>
+<li>Run the full chronological series without resetting at month boundaries.</li>
+<li>Save that cell's output and repeat for other cells.</li>
+<li>Put the completed cell outputs back onto the latitude–longitude grid.</li>
+</ol>
+<p><strong>Do not set <code>Npnts</code> equal to your number of ERA5 grid cells and provide one weather series.</strong> In this source version, all <code>Npnts</code> points receive the same meteorology. That option is useful for different vegetation conditions under common forcing, not for a regional grid with spatially varying weather. Our runner uses <code>Npnts=1</code> for each independent cell, then parallelises cells with Slurm.</p>
+<p>This produces results on your existing ERA5-Land grid. It does not downscale to 15 m or 30 m ICESat-2 segments. Comparing model states with those segments will require a separate spatial and temporal matching step.</p>
+<h2 id="3-files-in-this-starter-package">3. Files in this starter package</h2>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GUIDE.md</code></td>
+<td>This guide, readable in a text editor or Markdown viewer</td>
+</tr>
+<tr>
+<td><code>build_fsm2.sh</code></td>
+<td>Downloads the pinned FSM2 source and compiles the chosen configuration</td>
+</tr>
+<tr>
+<td><code>run_grid.py</code></td>
+<td>Converts forcing, runs cells, checks outputs and saves completed cells</td>
+</tr>
+<tr>
+<td><code>assemble_grid.py</code></td>
+<td>Assembles completed cells into monthly gridded NetCDFs</td>
+</tr>
+<tr>
+<td><code>run_fsm2.slurm</code></td>
+<td>Example job array: one latitude row per job</td>
+</tr>
+<tr>
+<td><code>VALIDATION.md</code></td>
+<td>What was tested and what remains to check on your data</td>
+</tr>
+</tbody>
+</table>
+<p>Keep these files together in a new project directory, for example <code>~/projects/FSM2_starter</code>. Keep the large input and result files in your normal scratch allocation. Do not put results over the prepared inputs.</p>
+<p>The attachment's defaults are:</p>
+<ul>
+<li>raw weather: <code>../../scratch/ERA5/&lt;region&gt;/YYYY_MM/YYYY_MM.nc</code>;</li>
+<li>prepared weather plus vegetation: <code>../../scratch/fsm2/&lt;region&gt;/YYYY_MM/driving_data.nc</code>.</li>
+</ul>
+<p>Use the <strong>second</strong> set as model inputs. <code>&lt;region&gt;</code> is whatever name the preparation used, such as <code>S01</code> or <code>ontario</code>. Its current default dates are July 2018–June 2026, but the runner uses the files actually present. It does not assume those months all exist.</p>
+<p>Relative paths such as <code>../../scratch</code> depend on where you ran the preparation command. They are not automatically relative to the script file. Locate your actual files and use absolute paths below.</p>
+<h2 id="4-install-the-tools-and-compile">4. Install the tools and compile</h2>
+<h3 id="41-open-a-linux-terminal">4.1 Open a Linux terminal</h3>
+<p>Run this on the Linux system where your data live, through your usual SSH connection. The Slurm example is for that system. These are terminal commands, not notebook cells. You can also use Linux or WSL on a PC for a small test, but would need the data there.</p>
+<p>A few terms:</p>
+<table>
+<thead>
+<tr>
+<th>Term</th>
+<th>Meaning here</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Fortran source</td>
+<td>The model's <code>.F90</code> text files</td>
+</tr>
+<tr>
+<td>Compiler</td>
+<td><code>gfortran</code>, which turns the source into a program</td>
+</tr>
+<tr>
+<td>Executable</td>
+<td>The resulting file called <code>FSM2</code></td>
+</tr>
+<tr>
+<td>Namelist</td>
+<td>A short settings file that FSM2 reads when it starts</td>
+</tr>
+<tr>
+<td>Shell script</td>
+<td>A file of terminal commands, run with <code>bash</code></td>
+</tr>
+<tr>
+<td>Spin-up</td>
+<td>A preliminary simulation used to establish model state</td>
+</tr>
+</tbody>
+</table>
+<h3 id="42-check-your-compiler-and-python">4.2 Check your compiler and Python</h3>
+<pre><code class="language-bash">cd ~/projects/FSM2_starter
+git --version
+gfortran --version
+python --version
+</code></pre>
+<p>If <code>gfortran</code> is unavailable on your cluster, inspect its available compiler modules:</p>
+<pre><code class="language-bash">module avail gcc
+module avail gfortran
+</code></pre>
+<p>Load the GCC/compiler module listed by your system, then repeat <code>gfortran --version</code>. Module names and accounts are cluster-specific; I cannot infer their exact current names from the preparation script. Ask support for a GNU Fortran compiler if neither command finds one. Use the same environment for compilation and batch execution.</p>
+<p>On a personally administered Ubuntu/WSL installation, the usual installation is:</p>
+<pre><code class="language-bash">sudo apt update
+sudo apt install git gfortran
+</code></pre>
+<p>Do not run that installation command on a managed cluster.</p>
+<p>Create a Python environment if you have Conda:</p>
+<pre><code class="language-bash">conda create -n fsm2 -c conda-forge python=3.11 numpy pandas xarray dask netcdf4 matplotlib
+conda activate fsm2
+</code></pre>
+<p>Alternatively, install those Python packages in your existing suitable environment. The Fortran build here does <strong>not</strong> need the Fortran NetCDF library: Python handles NetCDF input and final output.</p>
+<h3 id="43-build-the-executable">4.3 Build the executable</h3>
+<p>From the folder containing the supplied scripts:</p>
+<pre><code class="language-bash">bash build_fsm2.sh
+ls -lh FSM2_source/FSM2
+</code></pre>
+<p>Compilation means making the program; it does not run your data. The message about a “detached HEAD” from Git is expected: it means the source is fixed to a particular commit.</p>
+<p>The script writes <code>physics_options.h</code> and <code>source_commit.txt</code> beside the runner. Keep them with your experiment record. Recompile whenever you change a compile-time physics option. Changing a Python setting does not change physics compiled into an existing executable.</p>
+<p>The supplied build uses:</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th style="text-align: right;">Value</th>
+<th>Reason</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>DRIV1D</code></td>
+<td style="text-align: right;">2</td>
+<td>Read specific humidity calculated from dew point</td>
+</tr>
+<tr>
+<td><code>SWPART</code></td>
+<td style="text-align: right;">1</td>
+<td>Partition total shortwave using solar geometry</td>
+</tr>
+<tr>
+<td><code>ZOFFST</code></td>
+<td style="text-align: right;">1</td>
+<td>Treat reanalysis reference heights as offsets above canopy top, as instructed by FSM2's user guide</td>
+</tr>
+<tr>
+<td><code>PROFNC</code></td>
+<td style="text-align: right;">0</td>
+<td>Use text output, which includes canopy snow mass</td>
+</tr>
+<tr>
+<td><code>CANMOD</code></td>
+<td style="text-align: right;">1</td>
+<td>One canopy layer for the first baseline</td>
+</tr>
+<tr>
+<td><code>CANINT</code></td>
+<td style="text-align: right;">1</td>
+<td>Upstream default linear interception</td>
+</tr>
+<tr>
+<td><code>CANUNL</code></td>
+<td style="text-align: right;">1</td>
+<td>Upstream default time/melt-dependent unloading</td>
+</tr>
+<tr>
+<td><code>CANRAD</code></td>
+<td style="text-align: right;">1</td>
+<td>Upstream default canopy radiation scheme</td>
+</tr>
+</tbody>
+</table>
+<p>Other physics options remain as in upstream <code>compil.sh</code>. This is an explicit baseline, not a recommendation that those options are optimal for every forest.</p>
+<p><strong>Do not substitute <code>compil_nc.sh</code>.</strong> In this version, native NetCDF output is limited to one point and its output list does not include the total canopy snow mass diagnostic. Python's final NetCDF contains it because we extract the text state output instead.</p>
+<p>Also, do not feed the repository's original Alptal weather file directly into this modified executable: that example uses the other forcing-column format. For an upstream demonstration, use an independent source checkout with its unchanged <code>compil.sh</code> and <code>./FSM2 &lt; nlst_Alptal.txt</code>.</p>
+<h2 id="5-inspect-your-prepared-files-first">5. Inspect your prepared files first</h2>
+<p>Run this in a notebook on the system with your data. Replace the one path with a file that exists:</p>
+<pre><code class="language-python">from pathlib import Path
+import xarray as xr
+
+path = Path('/scratch/s1803229/fsm2/S01/2018_07/driving_data.nc')
+with xr.open_dataset(path) as ds:
+    print(ds)
+    for name in ['t2m', 'd2m', 'sf', 'tp', 'ssrd', 'strd', 'u10', 'v10', 'sp', 'VAI', 'vegh']:
+        print(name, ds[name].dims, ds[name].attrs)
+    print('Latitude rows:', ds.sizes['latitude'])
+    print('Longitude columns:', ds.sizes['longitude'])
+    print('VAI range:', float(ds.VAI.min()), float(ds.VAI.max()))
+    print('Height range:', float(ds.vegh.min()), float(ds.vegh.max()))
+</code></pre>
+<p>The location above is an example based on your scratch naming, not a verified path. Change it to the actual location. <code>valid_time</code> or <code>time</code> is accepted by the runner; latitude and longitude must use those full names.</p>
+<p>Your attachment creates the following variables or retains them from ERA5-Land:</p>
+<table>
+<thead>
+<tr>
+<th>Prepared variable</th>
+<th>Expected stored units</th>
+<th>Model use</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>t2m</code></td>
+<td>K</td>
+<td>Air temperature; no Celsius conversion for input</td>
+</tr>
+<tr>
+<td><code>d2m</code></td>
+<td>K</td>
+<td>Calculate vapour pressure and specific humidity</td>
+</tr>
+<tr>
+<td><code>sf</code></td>
+<td>m water equivalent, accumulated</td>
+<td>De-accumulate, then convert to snowfall rate</td>
+</tr>
+<tr>
+<td><code>tp</code></td>
+<td>m water equivalent, accumulated</td>
+<td>De-accumulate, subtract snowfall to obtain rain</td>
+</tr>
+<tr>
+<td><code>ssrd</code></td>
+<td>J m⁻², accumulated</td>
+<td>De-accumulate, divide by 3600 to obtain W m⁻²</td>
+</tr>
+<tr>
+<td><code>strd</code></td>
+<td>J m⁻², accumulated</td>
+<td>Same conversion for longwave</td>
+</tr>
+<tr>
+<td><code>u10</code>, <code>v10</code></td>
+<td>m s⁻¹</td>
+<td>Wind speed <code>sqrt(u10² + v10²)</code></td>
+</tr>
+<tr>
+<td><code>w10</code></td>
+<td>m s⁻¹</td>
+<td>Already calculated by your script; the runner recomputes from the components</td>
+</tr>
+<tr>
+<td><code>sp</code></td>
+<td>Pa</td>
+<td>Surface air pressure</td>
+</tr>
+<tr>
+<td><code>VAI</code></td>
+<td>m² m⁻², dimensionless ratio</td>
+<td>Vegetation area per ground area</td>
+</tr>
+<tr>
+<td><code>vegh</code></td>
+<td>m</td>
+<td>Canopy height</td>
+</tr>
+</tbody>
+</table>
+<p>The preparation script checks that vegetation layers are static and two-dimensional, but <strong>does not check or convert their physical units</strong>. Confirm the source height is in metres and VAI is a physical area index, not a percentage, scaled integer, canopy-cover fraction or unconverted LAI product. LAI and VAI are related but not identical because woody vegetation contributes to VAI.</p>
+<p>The runner requires a consistent grid and identical static vegetation across months. It refuses duplicate, missing or out-of-order hours. Do not fill missing forcing with zero: that would create artificial dry periods or impossible temperatures.</p>
+<p>This baseline runs cells with finite <code>VAI &gt; 0</code> and finite <code>vegh &gt; 2 m</code>. The 2 m restriction avoids using the default 2 m canopy-base parameter for shorter vegetation. Nonforest, missing-vegetation and shorter-canopy cells are excluded and remain <strong>NaN</strong> in the final output. A short-vegetation configuration would need a deliberate parameter change. This is not a WorldCover mask; incorporate that separately if you need a specific forest definition.</p>
+<h2 id="6-the-essential-weather-conversions">6. The essential weather conversions</h2>
+<h3 id="61-era5-land-accumulations">6.1 ERA5-Land accumulations</h3>
+<p>Your script requests <code>reanalysis-era5-land</code> and preserves its source values. For its documented cumulative convention, each forecast starts at 00 UTC; the value at 01 UTC contains one hour, at 02 UTC contains two hours, and the next 00 UTC contains the preceding day's 24-hour accumulation.</p>
+<p>For each accumulated variable <code>A</code>, the hourly amount ending at time <code>t</code> is:</p>
+<ul>
+<li>at <strong>01 UTC</strong>: <code>A(t)</code>;</li>
+<li>at all other hours, including <strong>00 UTC</strong>: <code>A(t) - A(t - 1 hour)</code>.</li>
+</ul>
+<p>This subtraction must cross month boundaries. The runner joins the chronological series first, so July's 00 UTC first record can use June's 23 UTC last record when June is available. It only drops the first record of the entire simulation if that record needs an unavailable preceding accumulation. It does not drop the first hour of every month.</p>
+<p>Use <code>--accumulation cumulative</code> for files retaining this documented convention. If inspection establishes that your particular files have already been de-accumulated, use <code>--accumulation hourly</code> instead, including in the Slurm file. Both modes expect precipitation amounts in metres and radiation energy in J m⁻², not rates or fluxes. Do not choose based solely on the units: cumulative and hourly amounts can have the same units.</p>
+<p>Inspect a rainy or snowy day at a valid cell. Within each forecast cycle, cumulative precipitation should build through the day, then restart at 01 UTC. Confirm that hourly increments sum back to that day's 00 UTC total. Significant negative increments are a reason to stop and investigate, not to clip them away. The runner rejects these; only small numerical negatives are clipped.</p>
+<h3 id="62-units-and-partitioning">6.2 Units and partitioning</h3>
+<p>For hourly increments:</p>
+<pre><code class="language-text">snowfall rate = hourly sf × 1000 / 3600          [kg m⁻² s⁻¹]
+rainfall rate = (hourly tp − hourly sf) × 1000 / 3600
+shortwave    = hourly ssrd / 3600               [W m⁻²]
+longwave     = hourly strd / 3600               [W m⁻²]
+</code></pre>
+<p>One metre water equivalent is 1000 kg m⁻². No snow-density conversion is involved. The snowfall field already supplies the precipitation phase, so the runner does not repartition all precipitation using an arbitrary temperature threshold.</p>
+<h3 id="63-humidity-and-heights">6.3 Humidity and heights</h3>
+<p>The runner uses a conventional over-water saturation-vapour-pressure approximation on dew point, in Celsius:</p>
+<pre><code class="language-text">e = 611.2 × exp(17.67 × Td_C / (Td_C + 243.5))    [Pa]
+q = 0.622 × e / (sp − 0.378 × e)                 [kg kg⁻¹]
+</code></pre>
+<p>This is a transparent approximation, not an exact implementation of the full IFS saturation formula. Dew point calls for an over-water relation, including in subfreezing air. The corresponding RH column is supplied for format completeness, but the selected FSM2 reader uses <code>q</code> directly. This avoids a mismatch with FSM2's alternative internal RH-to-humidity conversion.</p>
+<p>The namelist uses <code>zT=2</code>, <code>zU=10</code> with <strong><code>ZOFFST=1</code></strong>. These are reanalysis reference-height offsets above the canopy in the model's convention, not observations measured inside the model forest. This convention does not make ERA5-Land's weather perfectly representative of any individual stand.</p>
+<h3 id="64-timing">6.4 Timing</h3>
+<p>An increment labelled 13:00 represents the interval 12:00–13:00 UTC. The runner sends 12:30 to FSM2 for solar geometry and labels the resulting state 13:00 in the output. Temperature, dew point, pressure and wind use the available instantaneous values at 13:00; treating these as representative of the hour is a stated approximation.</p>
+<p>Longitude uses east-positive degrees, and solar noon is set to <code>12 − longitude/15</code> in UTC hours. No daylight-saving or local-time conversion is made. For western Canada, solar noon is therefore later than 12 UTC. Keeping this convention is important for canopy radiation and matching ICESat-2 observation times.</p>
+<h2 id="7-understand-the-model-input-and-canopy-output">7. Understand the model input and canopy output</h2>
+<p>The runner writes one temporary text forcing file per cell. With <code>DRIV1D=2</code>, its columns are exactly:</p>
+<pre><code class="language-text">year month day hour SW LW Rf Sf Ta Qa RH Ua Ps
+</code></pre>
+<p>Notice that <strong>rain comes before snow</strong> in this format. The other FSM input format has a different order. There is no header row.</p>
+<p>A namelist is simply a settings file with sections beginning <code>&amp;name</code> and ending <code>/</code>. The runner generates all seven required sections, in this order:</p>
+<pre><code class="language-text">&amp;params
+/
+&amp;gridpnts
+ Npnts=1
+/
+&amp;gridlevs
+/
+&amp;drive
+ met_file='met.txt', dt=3600, lat=55, noon=18.6666667, zT=2, zU=10
+/
+&amp;veg
+ VAI=3, vegh=15, alb0=0.2
+/
+&amp;initial
+ start_file='none'
+/
+&amp;outputs
+ runid='', dump_file='dump.txt'
+/
+</code></pre>
+<p>Those vegetation and position values are illustrations. The runner substitutes each cell's own values. Empty sections retain model defaults.</p>
+<p>In terminal terms, executing one model run is <code>./FSM2 &lt; namelist.txt</code>: <code>&lt;</code> sends the settings file to the program. The Python runner does the same without requiring you to manage thousands of files manually.</p>
+<p>In <code>stat.txt</code>, for <strong>one point</strong> and the default four soil layers and one canopy layer:</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: right;">Column, counting from 1</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: right;">1–4</td>
+<td>Year, month, day, hour</td>
+</tr>
+<tr>
+<td style="text-align: right;">5</td>
+<td>Ground snow depth, m</td>
+</tr>
+<tr>
+<td style="text-align: right;">6</td>
+<td>Ground snow mass, kg m⁻²</td>
+</tr>
+<tr>
+<td style="text-align: right;"><strong>7</strong></td>
+<td><strong>Total snow mass on canopy, kg m⁻²</strong></td>
+</tr>
+<tr>
+<td style="text-align: right;">8–11</td>
+<td>Soil temperatures, K</td>
+</tr>
+<tr>
+<td style="text-align: right;">12</td>
+<td>Surface temperature, K</td>
+</tr>
+<tr>
+<td style="text-align: right;">13</td>
+<td>Canopy temperature, K</td>
+</tr>
+</tbody>
+</table>
+<p>The source calls the total-canopy diagnostic <strong><code>svg</code></strong>. Internally, <strong><code>Sveg</code></strong> holds individual canopy-layer masses. The diagnostic totals them; with one layer they coincide for forest cells. The runner extracts zero-based Python column <code>6</code> and calls it <code>canopy_snow_mass</code>.</p>
+<p>It is a <strong>mass storage</strong>, not a snowfall rate or canopy snow-cover fraction. Numerically, 1 kg m⁻² is 1 mm water equivalent. Do not divide it by 3600. Do not multiply by VAI again. It is expressed per model ground area, not per square metre of foliage. A grid cell represented as a homogeneous canopy is also not automatically a fractional forest/open-land mosaic; do not apply a canopy-cover weighting without defining that representation.</p>
+<h2 id="8-first-test-one-forest-cell">8. First test: one forest cell</h2>
+<p>From the project folder, set absolute input and output paths. These examples must be adjusted to your real paths:</p>
+<pre><code class="language-bash">export FSM2_PROJECT=&quot;$PWD&quot;
+export FSM2_INPUT=/scratch/s1803229/fsm2/S01
+export FSM2_OUTPUT=/scratch/s1803229/FSM2_results/S01_baseline_cells
+</code></pre>
+<p>Run one eligible forest cell through the complete input period:</p>
+<pre><code class="language-bash">python run_grid.py \
+  --input &quot;$FSM2_INPUT&quot; \
+  --output &quot;$FSM2_OUTPUT&quot; \
+  --accumulation cumulative \
+  --spinup-cycles 2 \
+  --limit 1
+</code></pre>
+<p>Use an interactive compute allocation for this test if required by your cluster's policy. The script chooses the first eligible forest cell in grid-index order. It prints a saved filename, such as <code>cell_y0000_x0004.nc</code>. <code>y</code> and <code>x</code> are zero-based latitude and longitude indices; row 0 is whatever latitude occurs first in your files, not necessarily the southernmost row.</p>
+<p>Default spin-up repeats the first complete 12 calendar months twice, transferring the full dump state between runs. It then starts the actual simulation using that state. These are repeated-forcing spin-up cycles, not real observations from earlier years. Their output is discarded.</p>
+<p>At least 12 months are required for this option. For a short software-only test, <code>--spinup-cycles 0</code> is permitted. Put that test in a separate output directory and do not treat it as a spin-up-checked scientific result.</p>
+<p>For an earlier January-to-December forcing series, no manual change is needed. For July-to-June, the repeated cycle is July-to-June. You should compare, for example, 2 and 4 spin-up cycles at representative cells in <strong>separate output folders</strong>, and verify that the canopy-snow series and relevant soil/snow states are sufficiently stable for your purpose. Two cycles are a starter choice, not a demonstrated convergence criterion.</p>
+<p>To inspect the first cell in a notebook:</p>
+<pre><code class="language-python">from pathlib import Path
+import xarray as xr
+import matplotlib.pyplot as plt
+
+folder = Path('/scratch/s1803229/FSM2_results/S01_baseline_cells')
+path = sorted(folder.glob('cell_y*_x*.nc'))[0]
+with xr.open_dataset(path) as ds:
+    print(ds)
+    print(ds[['canopy_snow_mass', 'ground_snow_mass']].to_array().min().item())
+    print('Canopy maximum:', float(ds.canopy_snow_mass.max()), 'kg m-2')
+    ds.canopy_snow_mass.sel(time=slice('2018-10-01', '2019-05-31')).plot()
+    plt.ylabel('Canopy snow mass (kg m$^{-2}$)')
+    plt.title('FSM2 canopy snow mass')
+    plt.show()
+</code></pre>
+<p>Adjust the plotting dates to your actual period. Expect event-driven loading and subsequent losses, not a monotonically increasing store. Inspect a winter snowfall period, melt periods, summer values and month boundaries. Some snowfall may pass through or unload quickly, so a snow event need not produce a large persistent canopy mass.</p>
+<h2 id="9-run-all-cells">9. Run all cells</h2>
+<p>For a small region, the sequential command is:</p>
+<pre><code class="language-bash">python run_grid.py \
+  --input &quot;$FSM2_INPUT&quot; \
+  --output &quot;$FSM2_OUTPUT&quot; \
+  --accumulation cumulative \
+  --spinup-cycles 2
+</code></pre>
+<p>It runs one forest cell at a time. It does not load the entire multiyear domain into memory. Original file chunks are retained, and cell data are loaded with a synchronous Dask scheduler to bound concurrency. Compressed spatial input chunks may still have to be read repeatedly; this prioritises a straightforward, auditable first implementation rather than maximum I/O performance.</p>
+<p>The model runs the full time series in one invocation after spin-up. Monthly forcing files are storage partitions, not separate model initializations. <strong>Never reset canopy snow, ground snow or soil state at the start of each month.</strong></p>
+<p>A completed cell is written atomically and can be skipped on a repeated command. Output metadata record an executable and wrapper fingerprint, input paths/sizes/modification times, settings and source commit. If these change, use a new output directory; the script rejects a mismatched existing result.</p>
+<p>Successful temporary text files are deleted. Failed cells retain a <code>work_y...</code> folder with forcing, namelist and <code>model.log</code> for diagnosis. A killed cell is rerun from the beginning on the next attempt; this is completed-cell recovery, not a timestep checkpoint system. Do not launch overlapping jobs for the same cells in the same output directory.</p>
+<h2 id="10-run-the-grid-with-slurm">10. Run the grid with Slurm</h2>
+<p>The supplied array script assigns <strong>one latitude row to each task</strong>, with cells within that row run sequentially. Each task uses one CPU. Merely requesting more CPUs will not make this unmodified model multithreaded.</p>
+<p>First, edit <code>run_fsm2.slurm</code> to load the same compiler and Python environment used in your successful test. Add your account and partition if required. Your previous jobs used <code>geos_extra</code>; use that only if it remains appropriate on this cluster. The supplied 8 GB memory and 24-hour wall time are starting requests, not measured requirements for your region.</p>
+<p>Obtain the latitude count:</p>
+<pre><code class="language-bash">python - &lt;&lt;'PY'
+import os
+from pathlib import Path
+import xarray as xr
+file = sorted(Path(os.environ['FSM2_INPUT']).glob('????_??/driving_data.nc'))[0]
+with xr.open_dataset(file) as ds:
+    print('Nlat =', ds.sizes['latitude'])
+    print('Last array index =', ds.sizes['latitude'] - 1)
+PY
+</code></pre>
+<p>If this prints <code>Nlat = 42</code>, for example, submit indices <strong>0–41</strong>:</p>
+<pre><code class="language-bash">mkdir -p slurm
+sbatch --array=0-41%4 run_fsm2.slurm
+</code></pre>
+<p>Replace 41 with your actual last index. <code>%4</code> permits at most four simultaneous jobs. Start with low concurrency to avoid overwhelming shared NetCDF storage, then increase only after measuring performance and confirming cluster limits. The default line in the supplied Slurm file runs just row 0; the command-line array option overrides it.</p>
+<p>The three exported <code>FSM2_*</code> variables from section 8 must still be set in the submission shell. Slurm normally exports the submission environment; activate your environment explicitly in the script if your cluster requires it. Create the log directory <strong>before</strong> submitting because Slurm opens log files before running the script.</p>
+<p>Monitor and inspect logs:</p>
+<pre><code class="language-bash">squeue -u &quot;$USER&quot;
+sacct -j JOB_ID --format=JobID,State,Elapsed,MaxRSS
+</code></pre>
+<p>Replace <code>JOB_ID</code> with the number returned by <code>sbatch</code>. Look inside <code>slurm/fsm2-JOBID_TASKID.out</code> and <code>.err</code> for failed cells. A row containing no eligible forest cells legitimately finishes without outputs.</p>
+<p>On timeout or interruption, resubmit the same row range with the same settings. Completed cells are reused. Before launching every region, time a representative row and check <code>MaxRSS</code>. If a row exceeds the wall limit, use a longer permitted time limit or divide work further; the current starter's row task is not internally parallel.</p>
+<p>For a different region, change <code>FSM2_INPUT</code> and <code>FSM2_OUTPUT</code> and recalculate the array bounds. Grid dimensions need not be identical between regions.</p>
+<h2 id="11-assemble-monthly-gridded-netcdfs">11. Assemble monthly gridded NetCDFs</h2>
+<p>Wait until all row jobs finish successfully. Then run this on a compute node or in an appropriately resourced batch job:</p>
+<pre><code class="language-bash">python assemble_grid.py \
+  --template &quot;$FSM2_INPUT/2018_07/driving_data.nc&quot; \
+  --cells &quot;$FSM2_OUTPUT&quot; \
+  --output /scratch/s1803229/FSM2_results/S01_baseline_grid
+</code></pre>
+<p>Change the template month to one that exists. This uses its coordinates and vegetation, verifies that all eligible cells are present, and checks that their times and run signatures agree. It refuses to hide failed cells by treating them as nonforest.</p>
+<p>Outputs follow your familiar monthly organisation:</p>
+<p><code>/scratch/s1803229/FSM2_results/S01_baseline_grid/YYYY_MM/fsm2_output.nc</code></p>
+<p>There is one time-by-latitude-by-longitude array per model variable. Excluded cells are NaN. The <code>simulated_forest_mask</code> distinguishes simulated forest from excluded cells. The first simulation month can contain one fewer record if its first accumulation could not be reconstructed. Do not pad that missing hour with zero.</p>
+<p>Assembly allocates one month's three output arrays at a time and refuses arrays exceeding 512 MiB in total. That is suitable for many regional domains, not a guarantee for a global domain. Larger domains need tiled assembly. It also refuses existing monthly outputs; if an assembly was interrupted, choose a new empty assembly folder or deliberately remove only its incomplete derived output tree before restarting. Per-cell simulations do not need to be repeated.</p>
+<p>Approximate uncompressed storage for three float32 variables is:</p>
+<p><code>12 × number_of_hours × number_of_grid_cells bytes</code>.</p>
+<p>For 70,000 hours and 2,000 cells, that is about 1.68 GB (1.56 GiB), before compression and metadata. Temporary text files and intermediate per-cell results add overhead. Results are compressed, but do not assume a particular compression ratio.</p>
+<h2 id="12-open-a-map-and-extract-a-series">12. Open a map and extract a series</h2>
+<p>Notebook example:</p>
+<pre><code class="language-python">from pathlib import Path
+import xarray as xr
+import matplotlib.pyplot as plt
+
+root = Path('/scratch/s1803229/FSM2_results/S01_baseline_grid')
+files = sorted(root.glob('????_??/fsm2_output.nc'))
+ds = xr.open_mfdataset(files, combine='by_coords', chunks={'time': 24})
+print(ds)
+
+# Pick an hour that exists in your simulation.
+field = ds.canopy_snow_mass.sel(time='2019-02-01T12:00:00', method='nearest')
+field.plot(x='longitude', y='latitude', cbar_kwargs={'label': 'Canopy snow mass (kg m$^{-2}$)'})
+plt.title(str(field.time.values))
+plt.show()
+
+# Substitute the location of interest; nearest does not guarantee it is a simulated forest cell.
+series = ds.canopy_snow_mass.sel(latitude=63.0, longitude=-123.0, method='nearest')
+print('Selected coordinate:', float(series.latitude), float(series.longitude))
+series.sel(time=slice('2018-10-01', '2019-05-31')).plot()
+plt.show()
+# When finished:
+# ds.close()
+</code></pre>
+<p>Check the selected coordinate lies inside the domain: unrestricted nearest selection can choose an edge cell for an outside point. Check its forest mask too. For ICESat-2, retain hourly output and match UTC observation times explicitly. Record whether you use the closest model state or interpolate between states; a daily average can miss brief canopy loading.</p>
+<p>A positive canopy mass is evidence of modelled canopy snow, but converting it into your observational canopy-snow class needs a tested threshold. The model does not directly output your three-class JointSnow labels or a remotely sensed canopy snow fraction.</p>
+<h2 id="13-choices-still-needed-for-scientific-use">13. Choices still needed for scientific use</h2>
+<p>Your inputs are sufficient to drive a baseline with model defaults. They do not eliminate the following choices:</p>
+<table>
+<thead>
+<tr>
+<th>Choice</th>
+<th>Starter treatment</th>
+<th>What to check for the research</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Soil properties</td>
+<td>Default clay/sand fractions and model parameters</td>
+<td>Soil data or sensitivity to defaults</td>
+</tr>
+<tr>
+<td>Initial conditions</td>
+<td>Default initialization, followed by repeated first-year spin-up</td>
+<td>Convergence; preferably earlier forcing if available</td>
+</tr>
+<tr>
+<td>Vegetation</td>
+<td>Static VAI and canopy height</td>
+<td>Product units, woodland meaning, seasonal/deciduous behaviour</td>
+</tr>
+<tr>
+<td>Ground albedo</td>
+<td>Constant <code>alb0=0.2</code></td>
+<td>Sensitivity or spatial data</td>
+</tr>
+<tr>
+<td>Forest representation</td>
+<td>One homogeneous column per eligible ERA5 cell</td>
+<td>Forest/open mosaics and consistency of area basis</td>
+</tr>
+<tr>
+<td>Canopy interception/unloading</td>
+<td><code>CANINT=1</code>, <code>CANUNL=1</code></td>
+<td>Sensitivity to alternatives and parameters</td>
+</tr>
+<tr>
+<td>Radiation</td>
+<td>Total SW partitioned by model; reanalysis LW</td>
+<td>No terrain shading or stand-specific radiation correction</td>
+</tr>
+<tr>
+<td>Reference heights</td>
+<td>Reanalysis offset convention</td>
+<td>How well coarse weather represents the forest</td>
+</tr>
+</tbody>
+</table>
+<p>For canopy mass, prioritise VAI, interception capacity, interception/unloading options, wind, snowfall and sublimation-related humidity. The default capacity parameter <code>svai</code> is 4.4 kg m⁻² per unit VAI. <code>svai × VAI</code> provides a useful baseline capacity scale; do not mistake that parameterisation for a measured capacity at every site.</p>
+<p>Keep all settings fixed for the first successful run. Then make separate named experiments for sensitivity tests. The starter explicitly checks one-layer output layout; changing <code>CANMOD</code> to two layers requires updating that validation and output handling before running the same wrapper. Changing <code>CANINT</code> or <code>CANUNL</code> is a compile-time change: edit the generated build configuration deliberately, rebuild, and keep a separate output folder. Re-running <code>build_fsm2.sh</code> recreates its baseline configuration.</p>
+<p>No calibration is performed by these scripts. Getting plausible output and getting a scientifically validated canopy-snow product are different milestones.</p>
+<h2 id="14-checks-before-accepting-a-run">14. Checks before accepting a run</h2>
+<ol>
+<li><strong>Forcing:</strong> confirm units, hourly timestamps and accumulation convention. For several wet days, verify hourly precipitation totals against raw daily accumulation. Check radiation is in W m⁻² after conversion.</li>
+<li><strong>Coverage:</strong> all expected months are present; vegetation interpolation has not produced large gaps or unrealistic values.</li>
+<li><strong>One-cell behaviour:</strong> all values finite; canopy and ground mass nonnegative; snowfall, loading and loss events have credible timing.</li>
+<li><strong>Month boundaries:</strong> no unexplained reset on the first of each month. Inspect a snow-covered winter boundary explicitly.</li>
+<li><strong>Spatial variation:</strong> different cells receive their own meteorology, VAI and height. Check two contrasting cells, not just a visually smooth map.</li>
+<li><strong>Spin-up:</strong> compare a longer spin-up at representative cells; pay attention to first-season states and persistent ground snow.</li>
+<li><strong>Completion:</strong> every intended forest cell has a successful output. Assembly enforces completeness for the starter mask.</li>
+<li><strong>Research comparison:</strong> inspect timing against independent observations before choosing canopy-mass thresholds or interpreting bias.</li>
+</ol>
+<h2 id="15-troubleshooting">15. Troubleshooting</h2>
+<table>
+<thead>
+<tr>
+<th>Symptom</th>
+<th>Likely cause / next step</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>gfortran: command not found</code></td>
+<td>Load/install a compiler, then rebuild</td>
+</tr>
+<tr>
+<td><code>No YYYY_MM/driving_data.nc files</code></td>
+<td>Input path is wrong or points one level too high/low</td>
+</tr>
+<tr>
+<td>Missing variable or unexpected dimensions</td>
+<td>Existing file differs from the attached preparation; inspect rather than rename blindly</td>
+</tr>
+<tr>
+<td>Time must be gap-free</td>
+<td>Missing month/hour, duplicate time, or inconsistent time dimension</td>
+</tr>
+<tr>
+<td>Static vegetation differs across months</td>
+<td>Different preparation inputs/grids; reconcile before modelling</td>
+</tr>
+<tr>
+<td>Negative accumulation increment</td>
+<td>Wrong accumulation mode, corrupt data, or an incorrect reset convention</td>
+</tr>
+<tr>
+<td>Snowfall exceeds total precipitation</td>
+<td>Inspect both increments and units; do not silently discard the discrepancy</td>
+</tr>
+<tr>
+<td>Spin-up requires 12 months</td>
+<td>Provide a complete cycle; zero cycles is only a short software test</td>
+</tr>
+<tr>
+<td>Configuration/input changed</td>
+<td>Use a fresh experiment folder or restore the original settings</td>
+</tr>
+<tr>
+<td>All cells skipped</td>
+<td>Check VAI/height units and the <code>VAI&gt;0</code>, <code>height&gt;2</code> mask</td>
+</tr>
+<tr>
+<td>Unexpected model output or NaNs</td>
+<td>Read retained <code>model.log</code>, namelist and forcing; check geometry, humidity and fluxes</td>
+</tr>
+<tr>
+<td>Job ends at wall time</td>
+<td>Resubmit to reuse completed cells; benchmark rows and adjust resources</td>
+</tr>
+<tr>
+<td>Missing cells during assembly</td>
+<td>Inspect failed/unfinished row jobs before proceeding</td>
+</tr>
+<tr>
+<td>Zero canopy snow all winter</td>
+<td>Check positive VAI, snowfall phase/order, temperature, and the actual output column</td>
+</tr>
+<tr>
+<td>Huge snowfall or radiation</td>
+<td>Accumulations may have been mistaken for hourly amounts or rates</td>
+</tr>
+</tbody>
+</table>
+<h2 id="16-sources-and-provenance">16. Sources and provenance</h2>
+<p>The model-specific instructions above were checked against these exact upstream files at the pinned revision. The source code is authoritative where the user-guide tables contain typographical errors (including a canopy-state unit typo and restart-order inconsistencies). Let the model write and read its own restart files rather than constructing them manually.</p>
+<ul>
+<li><a href="https://github.com/RichardEssery/FSM2">FSM2 repository</a></li>
+<li><a href="https://github.com/RichardEssery/FSM2/blob/a76945e75b36628161f4679428ed72dce090b368/docs/FSMuser.tex">Pinned user guide source</a></li>
+<li><a href="https://github.com/RichardEssery/FSM2/blob/a76945e75b36628161f4679428ed72dce090b368/src/FSM2.F90">Main program: inputs, state, shared meteorology and restart</a></li>
+<li><a href="https://github.com/RichardEssery/FSM2/blob/a76945e75b36628161f4679428ed72dce090b368/src/FSM2_DRIVE.F90">Driving-data reader and humidity handling</a></li>
+<li><a href="https://github.com/RichardEssery/FSM2/blob/a76945e75b36628161f4679428ed72dce090b368/src/FSM2_OUTPUT.F90">Text output: exact column order and units</a></li>
+<li><a href="https://github.com/RichardEssery/FSM2/blob/a76945e75b36628161f4679428ed72dce090b368/src/INTERCEPT.F90">Canopy snow mass balance</a></li>
+<li><a href="https://doi.org/10.5194/gmd-18-3583-2025">Essery et al. (2025), model description</a></li>
+<li><a href="https://confluence.ecmwf.int/spaces/CKB/pages/140385202/ERA5-Land+data+documentation">ECMWF ERA5-Land documentation: accumulations</a></li>
+<li><a href="https://confluence.ecmwf.int/pages/viewpage.action?pageId=185075432">ECMWF ERA5 documentation: near-surface humidity</a></li>
+<li>Your supplied preparation script, inspected on 10 November 2026.</li>
+</ul>
+<p>The Python and shell scripts in this package are a companion workflow prepared for your folder layout; they are not an official FSM2 distribution. The build retrieves the official source under its own licence. See <code>VALIDATION.md</code> for the actual test coverage.</p></body></html>
