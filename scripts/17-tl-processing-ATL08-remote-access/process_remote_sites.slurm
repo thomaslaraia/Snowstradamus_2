@@ -16,7 +16,7 @@ export OMP_NUM_THREADS=1
 export OPENBLAS_NUM_THREADS=1
 # Activate your snow_env before sbatch; the job inherits its Python environment.
 # Submit from the directory containing these three Python/Slurm files.
-SITES=../../../scratch/climate_site_selection/regional_site_selection/candidates_d8bbbaa5ea8a7a28/selection_e5c0ae68a48ece02/n09/selected_sites.csv
+SITES=../../../scratch/climate_site_selection/regional_site_selection/candidates_nov16/selection/n10/selected_sites.csv
 OUTPUT=../../../scratch/ATL08_parquets
 CONFIG=../../config.yaml
 
