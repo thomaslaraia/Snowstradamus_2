@@ -10,8 +10,8 @@ if [[ ${1:-} == --row || ${1:-} == --assemble ]]; then
     cd "$2"
     input=$3
     experiment=$4
-    current=$(sha256sum build_members.py run_grid.py assemble_grid.py submit_ensemble.sh | sha256sum | cut -c1-16)
-    [[ $current == "$(basename "$experiment")" ]] || { echo "Scripts changed after submission" >&2; exit 2; }
+    current=$(sha256sum build_members.py run_grid.py assemble_grid.py submit_ensemble.sh ../fsm2_flux.py | sha256sum | cut -c1-16)
+    [[ $current == "$(cat "$experiment/scripts.sha256")" ]] || { echo "Scripts changed after submission" >&2; exit 2; }
     rows=$5
     py=$6
     shift 6
@@ -46,11 +46,15 @@ input=$(realpath "${1:?Supply the prepared region folder, ending in S01}")
 root=${2:?Supply the ensemble results root}
 parallel=${3:-4}
 [[ $parallel =~ ^[1-9][0-9]*$ ]] || { echo "Concurrency must be positive" >&2; exit 2; }
-py=${FSM2_PYTHON:-"$HOME/venvs/fsm2/bin/python"}
+shift "$(( $# < 3 ? $# : 3 ))"
+read -ra factors <<< "${FSM2_FACTORS:-1}"
+py=$(command -v python)
 region=$(basename "$input")
-key=$(sha256sum build_members.py run_grid.py assemble_grid.py submit_ensemble.sh | sha256sum | cut -c1-16)
+scripts_hash=$(sha256sum build_members.py run_grid.py assemble_grid.py submit_ensemble.sh ../fsm2_flux.py | sha256sum | cut -c1-16)
+key=$(printf '%s\n' "$scripts_hash" "${factors[*]}" "$*" | sha256sum | cut -c1-16)
 mkdir -p "$root/$region/$key/logs"
 experiment=$(realpath "$root/$region/$key")
+printf '%s\n' "$scripts_hash" > "$experiment/scripts.sha256"
 
 help=$("$py" run_grid.py --help)
 flags=()
@@ -77,7 +81,7 @@ with xr.open_dataset(files[0]) as ds:
 PY
 )
 
-flock "$experiment/build.lock" "$py" build_members.py "$project/FSM2_source" "$experiment/build"
+flock "$experiment/build.lock" "$py" build_members.py "$project/FSM2_source" "$experiment/build" --factors "${factors[@]}"
 members=("$experiment"/build/*/member.json)
 count=${#members[@]}
 list=$(mktemp "$experiment/members.XXXXXX")
@@ -89,7 +93,7 @@ args=("$project" "$input" "$experiment" "$rows" "$py")
 logs="$experiment/logs"
 job=$(sbatch --parsable --job-name=fsm2-rows --array="0-$((rows*count-1))%$parallel" \
     --output="$logs/row-%A_%a.out" --error="$logs/row-%A_%a.err" \
-    "$script" --row "${args[@]}" "${flags[@]}")
+    "$script" --row "${args[@]}" "${flags[@]}" "$@")
 echo "Submitted $rows rows × $count configurations as array $job"
 
 sbatch --job-name=fsm2-assemble --dependency="afterok:${job%%;*}" --kill-on-invalid-dep=yes \

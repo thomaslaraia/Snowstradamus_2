@@ -10,7 +10,7 @@ git checkout "$PIN"
 python - <<'PY'
 from pathlib import Path
 p = Path('compil.sh').read_text()
-for old, new in [('DRIV1D 1', 'DRIV1D 2'), ('SWPART 0', 'SWPART 1'), ('ZOFFST 0', 'ZOFFST 1')\
+for old, new in [('DRIV1D 1', 'DRIV1D 2'), ('SWPART 0', 'SWPART 1'), ('ZOFFST 0', 'ZOFFST 1'),
                  ('CANUNL 1', 'CANUNL 2')]:
     assert p.count(old) == 1, old
     p = p.replace(old, new)
