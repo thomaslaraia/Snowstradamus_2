@@ -2,7 +2,7 @@
 #SBATCH --job-name=fsm2-assemble
 #SBATCH --account=geos_extra
 #SBATCH --time=24:00:00
-#SBATCH --mem=8G
+#SBATCH --mem=10G
 #SBATCH --cpus-per-task=1
 #SBATCH --output=slurm/fsm2-assemble-%j.out
 #SBATCH --error=slurm/fsm2-assemble-%j.err

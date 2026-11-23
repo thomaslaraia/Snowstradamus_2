@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #SBATCH --job-name=fsm2-grid
 #SBATCH --time=24:00:00
-#SBATCH --mem=8G
+#SBATCH --mem=10G
 #SBATCH --cpus-per-task=1
 #SBATCH --account=geos_extra
 #SBATCH --output=slurm/fsm2-%A_%a.out

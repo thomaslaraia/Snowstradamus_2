@@ -7,7 +7,7 @@
 #SBATCH --signal=B:USR1@120
 #SBATCH --open-mode=append
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=50G
+#SBATCH --mem=40G
 #SBATCH --account=geos_extra
 set -euo pipefail
 cd "$SLURM_SUBMIT_DIR"
@@ -21,7 +21,7 @@ OUTPUT=../../../scratch/ATL08_parquets
 CONFIG=../../config.yaml
 
 # Zero-based CSV rows. Use () for all candidates or e.g. (0 2 4).
-CANDIDATE_INDICES=(0)
+CANDIDATE_INDICES=(1 2 3 4 5 6 7 8 9)
 candidate_args=()
 if (( ${#CANDIDATE_INDICES[@]} > 0 )); then
     candidate_args=(--site-indices "${CANDIDATE_INDICES[@]}")

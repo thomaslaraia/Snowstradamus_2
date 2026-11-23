@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 #SBATCH --job-name=19-era5-fsm2
 #SBATCH --time=4-00:00:00
-#SBATCH --mem=24G
+#SBATCH --mem=8G
 #SBATCH --cpus-per-task=4
 #SBATCH --output=./slurm/19-era5-fsm2-%j.out
 #SBATCH --error=./slurm/19-era5-fsm2-%j.err
 #SBATCH --account=geos_extra
 #SBATCH --requeue
 #SBATCH --signal=B:USR1@120
+#SBATCH --array=1-9
 
 set -euo pipefail
 cd "$SLURM_SUBMIT_DIR"
@@ -16,7 +17,7 @@ export OMP_NUM_THREADS=1
 export OPENBLAS_NUM_THREADS=1
 
 SITES_CSV="../../scratch/climate_site_selection/regional_site_selection/candidates_nov16/selection/n10/selected_sites.csv"
-CANDIDATES='[0]'
+CANDIDATES="[$SLURM_ARRAY_TASK_ID]"
 NAME="ontario"
 AREA=(53 -95 48 -87)
 # Empty for manual extent; otherwise path to selected_sites.csv.

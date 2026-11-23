@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #SBATCH --account=geos_extra
 #SBATCH --time=24:00:00
-#SBATCH --mem=8G
+#SBATCH --mem=10G
 #SBATCH --cpus-per-task=1
 set -euo pipefail
 

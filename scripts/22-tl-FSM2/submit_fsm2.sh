@@ -5,7 +5,7 @@ cd "$(dirname "$0")"
 region=${1:?Usage: bash submit_fsm2.sh S01}
 input="/scratch/s1803229/fsm2_flux/$region"
 output="/scratch/s1803229/fsm2_flux_results/$region"
-max_jobs=8
+max_jobs=6
 
 mkdir -p slurm
 
