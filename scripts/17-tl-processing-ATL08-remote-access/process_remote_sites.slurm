@@ -2,7 +2,7 @@
 #SBATCH --job-name=17-atl08-remote
 #SBATCH --output=../slurm/17-atl08-remote_%j.out
 #SBATCH --error=../slurm/17-atl08-remote_%j.err
-#SBATCH --time=4-00:00:00
+#SBATCH --time=23:00:00
 #SBATCH --requeue
 #SBATCH --signal=B:USR1@120
 #SBATCH --open-mode=append
@@ -41,7 +41,7 @@ requeue_on_timeout() {
 }
 
 python -u process_remote_sites.py "$SITES" "$OUTPUT" \
-    --config "$CONFIG" --length 30 --box-side-km 1 "${candidate_args[@]}" &
+    --config "$CONFIG" --length 30 --box-side-km 1 "${candidate_args[@]}" "$@" &
 worker_pid=$!
 trap requeue_on_timeout USR1
 wait "$worker_pid"

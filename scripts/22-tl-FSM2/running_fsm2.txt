@@ -1,0 +1,67 @@
+
+FSM2 ensemble — running S01
+
+1. Set up
+   Save the four-scheme build_members.py beside submit_ensemble.sh.
+   On may, run:
+
+   activate-fsm2
+
+2. Submit
+   Replace /path/to/prepared/S01 with the folder containing YYYY_MM/driving_data.nc.
+
+   FSM2_FACTORS=1 bash submit_ensemble.sh /path/to/prepared/S01 /scratch/s1803229/fsm2_ensembles 4
+
+   The launcher builds CLM5, Noah-MP, HP98 spruce and HP98 pine. Slurm runs
+   one task per configuration per latitude row on geos_extra. Each eligible
+   cell gets two first-year spin-up cycles followed by the full hourly series.
+
+3. Adjust the run
+   - Concurrency: change the final 4 in the command.
+   - Ensemble: use FSM2_FACTORS="0.8 1 1.2" for 36 configurations. Capacity
+     and unloading-rate factors vary independently. A loss factor of 1.2
+     scales the unloading-rate coefficient up by 20%.
+   - HP98 branch capacity: edit the spruce (5.9) or pine (6.6) coefficient
+     in the schemes list in build_members.py.
+   - HP98 unloading timescale: edit HP98_UNLOADING_DAYS in build_members.py.
+     The 10-day default is an assumption shared by both species runs.
+   - Spin-up, resources: edit --spinup-cycles 2, --mem=10G or
+     --time=24:00:00 in submit_ensemble.sh.
+
+4. Monitor and recover
+   squeue -u s1803229
+
+   The launcher prints both job IDs and the experiment directory. Under logs/,
+   row-*.out shows cell progress and row-*.err shows errors. Queued tasks
+   check the scripts for changes, so make edits before submitting.
+
+   If a row times out, inspect its logs. Once the previous tasks finish,
+   rerun the same command with the same scripts to reuse completed cells.
+   Changing the builder, launcher or factors creates a new experiment directory.
+
+5. Inspect results
+   Assembly starts after all simulation rows succeed. Each configuration
+   produces one hourly grid at <experiment>/<configuration>/S01.nc.
+
+   Configuration folders with FSM2_FACTORS=1:
+     clm5_cap1_loss1
+     noahmp_cap1_loss1
+     hp98_spruce_cap1_loss1
+     hp98_pine_cap1_loss1
+
+   Notebook example — replace /printed/experiment/path with the path printed
+   by the launcher:
+
+   import xarray as xr
+   import matplotlib.pyplot as plt
+
+   with xr.open_dataset("/printed/experiment/path/hp98_spruce_cap1_loss1/S01.nc") as ds:
+       ds.canopy_snow_mass.sel(time="2021-02-01T12:00").plot()
+       plt.show()
+
+   Other variables: ground_snow_cover_fraction (0–1), ground_snow_mass
+   (kg/m²) and snow_depth (m). Canopy snow mass is in kg/m².
+
+
+
+

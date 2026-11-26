@@ -1,0 +1,71 @@
+[physics]
+ALBEDO = 2  # 1 from surface temperature, 2 decays with time
+CANINT = 1  # 1 linear, 2 exponential
+CANMOD = 1  # 1 or 2 canopy layers
+CANRAD = 1  # 1 exponential attenuation through vegetation, 2 two-stream calculation with upward and downard radiation scattered by vegetation
+CANUNL = 1  # 1 time + melt, 2 temperature + wind
+CONDCT = 1  # 0 fixed conducitivity for every snow layer, 1 conductivity from snow density
+DENSTY = 1  # 0 snow density fixed, 1 compact with age --> target density, 2 compaction from weight of snow + snow metamorphism within each layer
+EXCHNG = 1  # 0 neutral atmospheric stability, 1 adjust exchange for atmospheric stability, where stable conditions supress turbulent mixing
+HYDROL = 1  # 0 drain water immediately, 1 each layer holds some water + excess drains down, 2 gravity driven drainage over time
+SGRAIN = 1  # 1 grain growth from local snow temp and grain size, 2 vertical temp gradient across snow layers included in grain growth calculation
+SNFRAC = 1  # 1 increases linearly, 2 increases like tanh, 3 increases like x/(1+x)
+
+[params]
+# Defaults from FSM2 a76945e7. Timescales are expressed in seconds.
+
+# Vegetation parameters
+acn0 = 0.1  # Snow-free dense canopy albedo
+acns = 0.3  # Snow-covered dense canopy albedo
+avg0 = 0.27  # Canopy element reflectivity
+avgs = 0.65  # Canopy snow reflectivity
+cvai = 3.6e4  # Vegetation heat capacity per unit VAI (J/K/m^2)
+gsnf = 0.01  # Snow-free vegetation moisture conductance (m/s)
+hbas = 2  # Canopy base height (m)
+kext = 0.5  # Vegetation light extinction coefficient
+leaf = 20  # Leaf boundary resistance (s/m)^(1/2)
+svai = 4.4  # Intercepted snow capacity per unit VAI (kg/m^2)
+Tunl = 1.87e5  # Temperature unloading parameter (K s)
+Uunl = 1.56e5  # Wind unloading parameter (m)
+wcan = 2.5  # Canopy wind decay coefficient
+
+# Snow parameters
+asmn = 0.5  # Minimum albedo for melting snow
+asmx = 0.85  # Maximum albedo for fresh snow
+eta0 = 3.7e7  # Reference snow viscosity (Pa s)
+hfsn = 0.1  # Snowcover fraction depth scale (m)
+kfix = 0.24  # Fixed thermal conductivity of snow (W/m/K)
+nhyd = 10  # Number of snow hydrology substeps
+rcld = 300  # Maximum density for cold snow (kg/m^3)
+rfix = 300  # Fixed snow density (kg/m^3)
+rgr0 = 5e-5  # Fresh snow grain radius (m)
+rhof = 100  # Fresh snow density (kg/m^3)
+rmlt = 500  # Maximum density for melting snow (kg/m^3)
+Salb = 10  # Snowfall to refresh albedo (kg/m^2)
+snda = 2.8e-6  # Thermal metamorphism parameter (1/s)
+Talb = -2  # Snow albedo decay temperature threshold (C)
+tcld = 3600000  # Cold snow albedo decay time scale (s)
+tmlt = 360000  # Melting snow albedo decay time scale (s)
+trho = 720000  # Snow compaction timescale (s)
+Wirr = 0.03  # Irreducible liquid water content of snow
+z0sn = 0.001  # Snow roughness length (m)
+
+# Ground surface and soil parameters
+fcly = 0.3  # Soil clay fraction
+fsnd = 0.6  # Soil sand fraction
+gsat = 0.01  # Surface conductance for saturated soil (m/s)
+z0sf = 0.1  # Snow-free surface roughness length (m)
+
+# Ensemble parameters
+Pmlt = 1  # Precipitation multiplier for ensemble generation
+Tadd = 0  # Temperature offset for ensemble generation (K)
+
+[run]
+spinup_cycles = 2
+
+[custom]
+# Optional Fortran expressions, one line each. Either overrides the
+# corresponding CANINT or CANUNL formula in the temporary build.
+# loading = "fveg*Sfg*dt"                         # upstream CANINT=1
+# unloading = "Sveg(n)*(1.0-exp(-dt/eunl))"       # exact exponential example
+

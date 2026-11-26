@@ -128,9 +128,26 @@ def main():
         core_sha256=hashlib.sha256(Path(remote.__file__).read_bytes()).hexdigest(),
         runner_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest())
     logging.info('Candidate Parquet files: %s', root)
-    from sliderule import sliderule, earthdata
-    sliderule.init(verbose=False, rethrow=True)
+    
+    
+    from importlib import import_module
+    from sliderule import earthdata
+
+    sliderule = import_module("sliderule.sliderule")
+    pat_path = Path.home() / ".config" / "sliderule" / "github_pat"
+    pat = pat_path.read_text().strip()
+    if not pat:
+        raise RuntimeError(f"GitHub PAT file is empty: {pat_path}")
+
+    os.environ["SLIDERULE_GITHUB_TOKEN"] = pat
+    session = sliderule.create_session(verbose=False, rethrow=True)
+    if not session.authenticate():
+        raise RuntimeError("SlideRule PAT authentication failed.")
+
+    sliderule.slideruleSession = session
     provider = remote.public_provider()
+    
+    
     failures = 0
     for site in sites.itertuples(index=False):
         site_id = str(site.site_id)
